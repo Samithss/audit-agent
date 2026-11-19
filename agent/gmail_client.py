@@ -19,7 +19,9 @@ single message a human explicitly clicks "run" on.
 """
 import base64
 import email
+from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from email.utils import parseaddr
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -171,8 +173,11 @@ def get_message_meta(message_id: str) -> dict:
     msg = svc.users().messages().get(userId="me", id=message_id, format="metadata",
                                      metadataHeaders=["Subject", "From", "Message-Id", "Message-ID"]).execute()
     headers = {h["name"]: h["value"] for h in msg["payload"].get("headers", [])}
+    sender = headers.get("From", "")
+    name, addr = parseaddr(sender)       # "Likhith Gowda <x@y>" -> ("Likhith Gowda", "x@y")
     return {
-        "from": headers.get("From", ""),
+        "from": sender,
+        "from_name": name or (addr.split("@")[0] if addr else ""),
         "subject": headers.get("Subject", "(no subject)"),
         "message_id_header": headers.get("Message-Id") or headers.get("Message-ID", ""),
         "thread_id": msg.get("threadId"),
@@ -208,6 +213,36 @@ def get_message_text(message_id: str) -> str:
     raise ValueError(f"message {message_id} has neither a PDF attachment nor a text body")
 
 
+def _html_body(body_text: str) -> str:
+    """The letter's results table is a plain-text pipe table, which only lines
+    up in a monospace font -- most mail clients use a proportional one, so it
+    arrives as ragged garbage. Send multipart/alternative and give the HTML
+    part a real <table>; clients that only do plain text still get the
+    original text unchanged."""
+    from html import escape
+
+    from .letter import iter_blocks
+
+    out = []
+    for kind, block in iter_blocks(body_text):
+        if kind == "table":
+            head, *rows = block
+            cells = "".join(
+                f'<th align="left" style="padding:6px 10px;border:1px solid #ccc;'
+                f'background:#f4f4f4">{escape(c)}</th>' for c in head)
+            body = "".join(
+                "<tr>" + "".join(
+                    f'<td style="padding:6px 10px;border:1px solid #ccc">{escape(c)}</td>'
+                    for c in r) + "</tr>"
+                for r in rows)
+            out.append(f'<table style="border-collapse:collapse;font-size:14px;margin:12px 0">'
+                       f"<tr>{cells}</tr>{body}</table>")
+        else:
+            out.append(f'<p style="margin:0 0 12px">{escape(block)}</p>')
+    return ('<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;'
+            f'line-height:1.5;color:#222">{"".join(out)}</div>')
+
+
 def send_reply(to: str, subject: str, body_text: str, thread_id: str = None, in_reply_to: str = None) -> str:
     """Sends ONE email. Called only from api/main.py's /send-reply endpoint,
     which only runs when a human clicks Send in the UI -- there is no
@@ -215,7 +250,9 @@ def send_reply(to: str, subject: str, body_text: str, thread_id: str = None, in_
     the reply into the original conversation when thread_id/in_reply_to are
     given (both come from get_message_meta() on the real inbound message,
     never from client-supplied values)."""
-    msg = MIMEText(body_text)
+    msg = MIMEMultipart("alternative")
+    msg.attach(MIMEText(body_text, "plain"))
+    msg.attach(MIMEText(_html_body(body_text), "html"))
     msg["to"] = to
     msg["subject"] = subject if subject.lower().startswith("re:") else f"Re: {subject}"
     if in_reply_to:

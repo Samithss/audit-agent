@@ -120,7 +120,7 @@ def _append_log(request_id: str, msg: str):
 
 
 def _execute(request_id: str, text: str, lender_id: str, period: dict | None, sample_file: str, source: str,
-             guideline_ids: list | None = None):
+             guideline_ids: list | None = None, recipient_name: str | None = None):
     """The one pipeline every entry point (sample picker / upload / Gmail)
     ultimately calls, just with a different source for `text`."""
     try:
@@ -153,7 +153,7 @@ def _execute(request_id: str, text: str, lender_id: str, period: dict | None, sa
         pack_paths = build_pack(request_id, decomposed_path)
 
         _append_log(request_id, "Drafting the response letter...")
-        letter_result = draft_and_validate(request_id, decomposed_path)
+        letter_result = draft_and_validate(request_id, decomposed_path, recipient_name=recipient_name)
         letter_path = save_letter_docx(request_id, letter_result["text"])
 
         with _lock:
@@ -391,7 +391,7 @@ def _begin_gmail_run(message_id: str, background_tasks: BackgroundTasks, lender_
     reply_meta = gmail_client.get_message_meta(message_id)
     _start(request_id, background_tasks, text=text, lender_id=lender_id,
            period=_period_arg(period_from, period_to), sample_file=sample_file,
-           source=f"gmail:{message_id}")
+           source=f"gmail:{message_id}", recipient_name=reply_meta.get("from_name") or None)
     _set(request_id, reply_meta=reply_meta, replied=False)
     inbox_runs.mark_processing(message_id, request_id)
     return request_id
