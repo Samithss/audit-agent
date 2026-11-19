@@ -3,3 +3,7 @@ out/
 __pycache__/
 .pytest_cache/
 .env
+.claude/
+data/cache/
+frontend/node_modules/
+frontend/dist/

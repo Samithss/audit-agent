@@ -12,13 +12,12 @@ transcript store, consent registry, template registry, dispatch tracker, cert re
 """
 import re
 from functools import lru_cache
-from pathlib import Path
 
-import duckdb
 import pandas as pd
 import yaml
 
-from .config import DATA_DIR, REGISTRY
+from . import db
+from .config import REGISTRY
 
 
 def normalize_collector_id(raw):
@@ -30,8 +29,7 @@ def normalize_collector_id(raw):
 
 
 class Tools:
-    def __init__(self, data_dir=DATA_DIR, registry=REGISTRY):
-        self.dir = Path(data_dir)
+    def __init__(self, registry=REGISTRY):
         self.reg = yaml.safe_load(open(registry))
         self.notes = []            # data-quality notes surfaced in the evidence pack
 
@@ -41,7 +39,13 @@ class Tools:
 
     @lru_cache(maxsize=None)
     def _raw(self, name):
-        return pd.read_csv(self.dir / self._src(name)["file"], dtype=str)
+        """The ONLY thing that changed in this migration -- every method below
+        reads through this one method, so swapping CSV -> Postgres here is the
+        entire data-layer migration. Everything downstream is untouched."""
+        with db.connect() as conn, conn.cursor() as cur:
+            cur.execute(f"SELECT * FROM audit.{name}")
+            rows = cur.fetchall()
+        return pd.DataFrame(rows)
 
     def _to_utc(self, s, tz):
         return pd.to_datetime(s).dt.tz_localize(tz).dt.tz_convert("UTC")
@@ -164,12 +168,15 @@ class Tools:
 
     # ------------------------------------------------------------------ warehouse SQL (read-only)
     def sql(self, query: str) -> pd.DataFrame:
-        """Read-only SQL over all sources. Tables are named after registry keys (contact_log, consent, ...)."""
+        """Read-only SQL straight against Postgres. Tables are schema-qualified:
+        audit.accounts, audit.contact_log, audit.transcripts, audit.consent,
+        audit.templates, audit.policy, audit.notices, audit.holidays,
+        audit.roster, audit.certificates."""
         q = query.strip().lower()
         if not (q.startswith("select") or q.startswith("with")) or any(
-                w in q for w in [" insert ", " update ", " delete ", " drop ", " create ", " attach ", " copy "]):
+                w in q for w in [" insert ", " update ", " delete ", " drop ", " create ", " alter ", " copy "]):
             raise PermissionError("Only read-only SELECT queries are allowed")
-        con = duckdb.connect()
-        for name in self.reg["sources"]:
-            con.register(name, self._raw(name))
-        return con.execute(query).df()
+        with db.connect() as conn, conn.cursor() as cur:
+            cur.execute(query)
+            rows = cur.fetchall()
+        return pd.DataFrame(rows)
