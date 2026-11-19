@@ -1,0 +1,24 @@
+From: rm.collections@l002-finance.example
+To: compliance@creditnirvana.example
+Date: 17 Nov 2026 18:05 IST
+Subject: quick one before the inspection
+
+Hi team,
+
+Ahead of the regulator's visit next month we need some comfort on fair practices for the accounts in the
+attached list (250 accounts, Annexure A), for April to June 2026.
+
+Basically we want to know we're only messaging people on WhatsApp who agreed to it, calling at the
+right times and not harassing anyone with too many calls, making sure the person on the line is
+actually the borrower before talking money, and only having certified people on the phones.
+
+Please flag anything that's off - we'd rather hear it from you than from them.
+
+Use our usual grading:
+  P1 - regulatory breach with direct borrower impact (messaging without consent, talking dues before
+       confirming identity / to someone else)
+  P2 - regulatory breach (uncertified agent on calls, calls outside allowed hours)
+  P3 - internal policy breach (too many calls)
+
+Thanks,
+Relationship Manager - Collections, L002

@@ -1,0 +1,27 @@
+From: internal.audit@l001-bank.example
+To: collections.compliance@creditnirvana.example
+Date: 14 Nov 2026 10:42 IST
+Subject: Q1 2026 outsourced collections audit - evidence request (Ref: IA/COLL/2026/014)
+
+Dear Compliance Team,
+
+As part of our periodic review of outsourced collection activity, please provide evidence for the
+300 accounts listed in Annexure A (attached), covering the period 1 January 2026 to 31 March 2026:
+
+1. WhatsApp reminders were sent only to borrowers who had consented to WhatsApp communication, and
+   only using approved templates.
+2. Collection calls respected the permitted calling hours and call frequency limits.
+3. All calls were made by recovery agents holding a valid certification.
+
+For each point please share the underlying records (contact logs, consent records, certificates)
+and clearly list any exceptions.
+
+Exceptions will be graded as follows (Annexure B - Severity scale):
+  CRITICAL - contact without valid consent; call made by an agent without valid certification
+  MAJOR    - message sent using a template that was not approved; call outside permitted hours
+  MINOR    - breach of call frequency limits
+
+Please respond by 21 Nov 2026.
+
+Regards,
+Internal Audit - Retail Collections, L001

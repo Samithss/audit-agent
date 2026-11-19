@@ -1,0 +1,30 @@
+{
+  "request_id": "REQ-03",
+  "source": "audit_requests/REQ-03_email.txt",
+  "lender_id": "L002",
+  "period": {"from": "2026-04-01", "to": "2026-06-30"},
+  "sample_file": "audit_requests/REQ-03_annexure_A_sample.csv",
+  "checks": [
+    {"check_id": "C1", "source_question": "Q1", "check_type": "CONSENT_BEFORE_CONTACT", "params": {"channel": "WHATSAPP"},
+     "source_text": "only messaging people on WhatsApp who agreed to it", "test": "as REQ-01 C1", "assumptions": []},
+    {"check_id": "C2", "source_question": "Q1", "check_type": "CALL_HOURS", "params": {},
+     "source_text": "calling at the right times", "test": "Strictest active D12 window (L002 addendum 09:00-18:00)",
+     "assumptions": ["'Right times' = permitted calling hours in D12"]},
+    {"check_id": "C3", "source_question": "Q1", "check_type": "CALL_FREQUENCY", "params": {},
+     "source_text": "not harassing anyone with too many calls", "test": "D12 daily (L002: 2 from 2026-05-01) and weekly caps",
+     "assumptions": ["'Too many calls' = D12 frequency caps"]},
+    {"check_id": "C4", "source_question": "Q1", "check_type": "VERIFICATION_BEFORE_DISCLOSURE", "params": {},
+     "source_text": "making sure the person on the line is actually the borrower before talking money", "test": "as REQ-02 C1",
+     "assumptions": []},
+    {"check_id": "C5", "source_question": "Q1", "check_type": "AGENT_CERTIFICATION", "params": {},
+     "source_text": "only having certified people on the phones", "test": "as REQ-01 C5", "assumptions": []}
+  ],
+  "severity_order": ["P1", "P2", "P3"],
+  "severity_rules": [
+    {"check_type": "CONSENT_BEFORE_CONTACT", "severity": "P1"},
+    {"check_type": "VERIFICATION_BEFORE_DISCLOSURE", "severity": "P1"},
+    {"check_type": "AGENT_CERTIFICATION", "severity": "P2"},
+    {"check_type": "CALL_HOURS", "severity": "P2"},
+    {"check_type": "CALL_FREQUENCY", "severity": "P3"}
+  ]
+}

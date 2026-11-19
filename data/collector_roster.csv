@@ -1,0 +1,121 @@
+collector_id,collector_name,agency_id,agency_name,joining_date,status
+COL-0001,Deepa Menon,AG01,Sahyog Recovery Services,2023-08-03,ACTIVE
+COL-0002,Rekha Das,AG01,Sahyog Recovery Services,2024-12-19,ACTIVE
+COL-0003,Rekha Sharma,AG01,Sahyog Recovery Services,2024-09-15,ACTIVE
+COL-0004,Naveen Nair,AG01,Sahyog Recovery Services,2024-06-30,ACTIVE
+COL-0005,Asha Gowda,AG01,Sahyog Recovery Services,2023-06-17,ACTIVE
+COL-0006,Karthik Joshi,AG01,Sahyog Recovery Services,2023-10-04,ACTIVE
+COL-0007,Naveen Mehta,AG01,Sahyog Recovery Services,2023-08-13,ACTIVE
+COL-0008,Rekha Rao,AG01,Sahyog Recovery Services,2025-05-13,ACTIVE
+COL-0009,Harish Reddy,AG01,Sahyog Recovery Services,2023-08-23,ACTIVE
+COL-0010,Manoj Reddy,AG01,Sahyog Recovery Services,2025-04-04,ACTIVE
+COL-0011,Venkatesh Joshi,AG01,Sahyog Recovery Services,2023-10-02,ACTIVE
+COL-0012,Priya Khan,AG01,Sahyog Recovery Services,2024-08-03,ACTIVE
+COL-0013,Vikram Rao,AG01,Sahyog Recovery Services,2023-08-06,ACTIVE
+COL-0014,Naveen Verma,AG01,Sahyog Recovery Services,2024-02-10,ACTIVE
+COL-0015,Naveen Pillai,AG01,Sahyog Recovery Services,2023-05-27,ACTIVE
+COL-0016,Rahul Patil,AG01,Sahyog Recovery Services,2023-09-10,ACTIVE
+COL-0017,Asha Mehta,AG01,Sahyog Recovery Services,2024-07-05,ACTIVE
+COL-0018,Rahul Banerjee,AG01,Sahyog Recovery Services,2024-03-14,ACTIVE
+COL-0019,Ganesh Joshi,AG01,Sahyog Recovery Services,2024-01-06,ACTIVE
+COL-0020,Fatima Patil,AG01,Sahyog Recovery Services,2024-06-05,ACTIVE
+COL-0021,Divya Sharma,AG01,Sahyog Recovery Services,2025-02-12,ACTIVE
+COL-0022,Suresh Iyer,AG01,Sahyog Recovery Services,2023-06-06,ACTIVE
+COL-0023,Naveen Nair,AG01,Sahyog Recovery Services,2025-03-22,ACTIVE
+COL-0024,Rekha Shetty,AG01,Sahyog Recovery Services,2024-09-02,ACTIVE
+COL-0025,Priya Joshi,AG02,Pragati Collections,2024-01-26,ACTIVE
+COL-0026,Swati Pillai,AG02,Pragati Collections,2026-02-21,ACTIVE
+COL-0027,Rahul Mehta,AG02,Pragati Collections,2025-05-31,ACTIVE
+COL-0028,Ramesh Iyer,AG02,Pragati Collections,2024-11-29,ACTIVE
+COL-0029,Pooja Das,AG02,Pragati Collections,2025-02-26,ACTIVE
+COL-0030,Naveen Rao,AG02,Pragati Collections,2023-04-25,ACTIVE
+COL-0031,Anjali Shetty,AG02,Pragati Collections,2023-06-11,ACTIVE
+COL-0032,Karthik Kumar,AG02,Pragati Collections,2025-01-09,ACTIVE
+COL-0033,Asha Das,AG02,Pragati Collections,2024-05-27,ACTIVE
+COL-0034,Harish Nair,AG02,Pragati Collections,2024-06-03,ACTIVE
+COL-0035,Lakshmi Singh,AG02,Pragati Collections,2025-05-11,ACTIVE
+COL-0036,Naveen Naidu,AG02,Pragati Collections,2024-09-15,ACTIVE
+COL-0037,Mohammed Patil,AG02,Pragati Collections,2024-01-18,ACTIVE
+COL-0038,Harish Nair,AG02,Pragati Collections,2024-07-06,ACTIVE
+COL-0039,Harish Naidu,AG02,Pragati Collections,2023-01-01,ACTIVE
+COL-0040,Swati Rao,AG02,Pragati Collections,2024-05-15,ACTIVE
+COL-0041,Ramesh Iyer,AG02,Pragati Collections,2024-01-07,ACTIVE
+COL-0042,Manoj Singh,AG02,Pragati Collections,2023-09-03,ACTIVE
+COL-0043,Suresh Gowda,AG02,Pragati Collections,2024-08-03,ACTIVE
+COL-0044,Priya Sharma,AG02,Pragati Collections,2025-01-19,ACTIVE
+COL-0045,Divya Sharma,AG02,Pragati Collections,2025-02-17,ACTIVE
+COL-0046,Pooja Patil,AG02,Pragati Collections,2023-05-12,ACTIVE
+COL-0047,Rekha Verma,AG02,Pragati Collections,2024-07-16,ACTIVE
+COL-0048,Kavya Das,AG02,Pragati Collections,2024-06-24,ACTIVE
+COL-0049,Sunita Shaikh,AG03,Vishwas Credit Solutions,2024-03-09,ACTIVE
+COL-0050,Mohammed Mehta,AG03,Vishwas Credit Solutions,2025-02-12,ACTIVE
+COL-0051,Asha Khan,AG03,Vishwas Credit Solutions,2024-12-31,ACTIVE
+COL-0052,Anjali Joshi,AG03,Vishwas Credit Solutions,2024-11-18,ACTIVE
+COL-0053,Naveen Menon,AG03,Vishwas Credit Solutions,2024-03-24,ACTIVE
+COL-0054,Imran Pillai,AG03,Vishwas Credit Solutions,2023-05-04,ACTIVE
+COL-0055,Fatima Gowda,AG03,Vishwas Credit Solutions,2023-03-07,ACTIVE
+COL-0056,Venkatesh Kumar,AG03,Vishwas Credit Solutions,2024-08-25,ACTIVE
+COL-0057,Pooja Gowda,AG03,Vishwas Credit Solutions,2024-08-25,ACTIVE
+COL-0058,Fatima Kumar,AG03,Vishwas Credit Solutions,2023-03-14,ACTIVE
+COL-0059,Vikram Reddy,AG03,Vishwas Credit Solutions,2023-08-23,ACTIVE
+COL-0060,Priya Reddy,AG03,Vishwas Credit Solutions,2025-05-30,ACTIVE
+COL-0061,Venkatesh Sharma,AG03,Vishwas Credit Solutions,2024-06-10,ACTIVE
+COL-0062,Fatima Das,AG03,Vishwas Credit Solutions,2024-11-16,ACTIVE
+COL-0063,Divya Khan,AG03,Vishwas Credit Solutions,2024-07-06,ACTIVE
+COL-0064,Arjun Banerjee,AG03,Vishwas Credit Solutions,2024-08-13,ACTIVE
+COL-0065,Divya Gowda,AG03,Vishwas Credit Solutions,2025-03-14,ACTIVE
+COL-0066,Divya Shetty,AG03,Vishwas Credit Solutions,2023-07-14,ACTIVE
+COL-0067,Lakshmi Iyer,AG03,Vishwas Credit Solutions,2024-11-05,ACTIVE
+COL-0068,Meena Menon,AG03,Vishwas Credit Solutions,2024-03-09,ACTIVE
+COL-0069,Meena Pillai,AG03,Vishwas Credit Solutions,2025-01-16,ACTIVE
+COL-0070,Suresh Iyer,AG03,Vishwas Credit Solutions,2023-03-04,ACTIVE
+COL-0071,Sanjay Rao,AG03,Vishwas Credit Solutions,2025-03-30,ACTIVE
+COL-0072,Sunita Iyer,AG03,Vishwas Credit Solutions,2023-09-12,ACTIVE
+COL-0073,Mohammed Khan,AG04,Samadhan Field Services,2026-01-23,ACTIVE
+COL-0074,Karthik Patil,AG04,Samadhan Field Services,2024-03-08,ACTIVE
+COL-0075,Kavya Das,AG04,Samadhan Field Services,2024-04-18,ACTIVE
+COL-0076,Fatima Sharma,AG04,Samadhan Field Services,2024-03-29,ACTIVE
+COL-0077,Nandini Mehta,AG04,Samadhan Field Services,2023-04-11,ACTIVE
+COL-0078,Suresh Mehta,AG04,Samadhan Field Services,2025-05-06,ACTIVE
+COL-0079,Ramesh Sharma,AG04,Samadhan Field Services,2025-02-10,ACTIVE
+COL-0080,Sunita Gowda,AG04,Samadhan Field Services,2023-06-20,ACTIVE
+COL-0081,Meena Verma,AG04,Samadhan Field Services,2024-05-07,ACTIVE
+COL-0082,Mohammed Joshi,AG04,Samadhan Field Services,2023-03-02,ACTIVE
+COL-0083,Kavya Joshi,AG04,Samadhan Field Services,2023-01-03,ACTIVE
+COL-0084,Sanjay Das,AG04,Samadhan Field Services,2025-03-13,ACTIVE
+COL-0085,Nandini Pillai,AG04,Samadhan Field Services,2023-10-20,ACTIVE
+COL-0086,Meena Mehta,AG04,Samadhan Field Services,2024-11-08,ACTIVE
+COL-0087,Vikram Verma,AG04,Samadhan Field Services,2023-06-08,ACTIVE
+COL-0088,Mohammed Singh,AG04,Samadhan Field Services,2023-08-11,ACTIVE
+COL-0089,Suresh Banerjee,AG04,Samadhan Field Services,2025-01-23,ACTIVE
+COL-0090,Pooja Reddy,AG04,Samadhan Field Services,2025-02-04,ACTIVE
+COL-0091,Venkatesh Reddy,AG04,Samadhan Field Services,2023-02-21,ACTIVE
+COL-0092,Ganesh Verma,AG04,Samadhan Field Services,2024-05-29,ACTIVE
+COL-0093,Sunita Naidu,AG04,Samadhan Field Services,2023-06-11,ACTIVE
+COL-0094,Suresh Naidu,AG04,Samadhan Field Services,2023-03-24,ACTIVE
+COL-0095,Sunita Nair,AG04,Samadhan Field Services,2023-03-12,ACTIVE
+COL-0096,Swati Sharma,AG04,Samadhan Field Services,2024-11-22,ACTIVE
+COL-0097,Sunita Gowda,AG05,Dakshin Recovery Partners,2024-02-18,ACTIVE
+COL-0098,Lakshmi Banerjee,AG05,Dakshin Recovery Partners,2023-09-10,ACTIVE
+COL-0099,Ganesh Shaikh,AG05,Dakshin Recovery Partners,2023-02-10,ACTIVE
+COL-0100,Swati Sharma,AG05,Dakshin Recovery Partners,2024-03-05,ACTIVE
+COL-0101,Rekha Banerjee,AG05,Dakshin Recovery Partners,2024-08-01,ACTIVE
+COL-0102,Imran Rao,AG05,Dakshin Recovery Partners,2023-09-25,ACTIVE
+COL-0103,Mohammed Rao,AG05,Dakshin Recovery Partners,2023-09-02,ACTIVE
+COL-0104,Rahul Joshi,AG05,Dakshin Recovery Partners,2023-05-15,ACTIVE
+COL-0105,Rekha Singh,AG05,Dakshin Recovery Partners,2024-04-13,ACTIVE
+COL-0106,Venkatesh Sharma,AG05,Dakshin Recovery Partners,2023-01-10,ACTIVE
+COL-0107,Karthik Shaikh,AG05,Dakshin Recovery Partners,2024-07-30,ACTIVE
+COL-0108,Lakshmi Sharma,AG05,Dakshin Recovery Partners,2024-07-04,ACTIVE
+COL-0109,Mohammed Naidu,AG05,Dakshin Recovery Partners,2023-09-29,ACTIVE
+COL-0110,Arjun Menon,AG05,Dakshin Recovery Partners,2023-03-12,ACTIVE
+COL-0111,Fatima Menon,AG05,Dakshin Recovery Partners,2023-10-19,ACTIVE
+COL-0112,Kavya Pillai,AG05,Dakshin Recovery Partners,2025-05-03,ACTIVE
+COL-0113,Pooja Singh,AG05,Dakshin Recovery Partners,2024-09-18,ACTIVE
+COL-0114,Nandini Naidu,AG05,Dakshin Recovery Partners,2023-01-09,ACTIVE
+COL-0115,Rekha Mehta,AG05,Dakshin Recovery Partners,2023-11-03,ACTIVE
+COL-0116,Rekha Iyer,AG05,Dakshin Recovery Partners,2023-05-18,ACTIVE
+COL-0117,Rahul Iyer,AG05,Dakshin Recovery Partners,2023-04-20,ACTIVE
+COL-0118,Asha Mehta,AG05,Dakshin Recovery Partners,2023-06-09,ACTIVE
+COL-0119,Rahul Singh,AG05,Dakshin Recovery Partners,2024-09-11,ACTIVE
+COL-0120,Mohammed Rao,AG05,Dakshin Recovery Partners,2023-07-28,ACTIVE

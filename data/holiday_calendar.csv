@@ -1,0 +1,65 @@
+date,holiday_name,scope,state
+2026-01-02,Mannam Jayanti,STATE,KL
+2026-01-14,Bhogi,STATE,TG
+2026-01-14,Uttarayan,STATE,GJ
+2026-01-15,Pongal,STATE,TN
+2026-01-16,Thiruvalluvar Day,STATE,TN
+2026-01-17,Uzhavar Thirunal,STATE,TN
+2026-01-23,Netaji Jayanti,STATE,WB
+2026-01-24,UP Diwas,STATE,UP
+2026-01-26,Republic Day,NATIONAL,
+2026-02-05,Delhi local holiday (synthetic),STATE,DL
+2026-02-16,Maha Shivratri (state),STATE,UP
+2026-02-19,Chhatrapati Shivaji Maharaj Jayanti,STATE,MH
+2026-03-04,Holi,NATIONAL,
+2026-03-19,Ugadi,STATE,KA
+2026-03-19,Gudi Padwa,STATE,MH
+2026-03-19,Ugadi,STATE,TG
+2026-03-20,Id-ul-Fitr,NATIONAL,
+2026-03-26,Ram Navami,NATIONAL,
+2026-03-31,Mahavir Jayanti,NATIONAL,
+2026-04-03,Good Friday,NATIONAL,
+2026-04-14,Dr. Ambedkar Jayanti,NATIONAL,
+2026-04-15,Tamil New Year (observed),STATE,TN
+2026-04-15,Bengali New Year,STATE,WB
+2026-04-15,Vishu (observed),STATE,KL
+2026-05-01,Buddha Purnima,NATIONAL,
+2026-05-01,Maharashtra Day,STATE,MH
+2026-05-01,Gujarat Sthapna Divas,STATE,GJ
+2026-05-04,Basava Jayanti,STATE,KA
+2026-05-27,Id-ul-Zuha (Bakrid),NATIONAL,
+2026-06-02,Telangana Formation Day,STATE,TG
+2026-06-26,Muharram,NATIONAL,
+2026-08-15,Independence Day,NATIONAL,
+2026-08-26,Thiruvonam,STATE,KL
+2026-09-04,Janmashtami,NATIONAL,
+2026-10-02,Gandhi Jayanti,NATIONAL,
+2026-10-10,Bathukamma,STATE,TG
+2026-10-19,Durga Puja (Saptami),STATE,WB
+2026-10-20,Dussehra,NATIONAL,
+2026-11-01,Kannada Rajyotsava,STATE,KA
+2026-11-09,Diwali,NATIONAL,
+2026-11-24,Guru Nanak Jayanti,NATIONAL,
+2026-12-25,Christmas,NATIONAL,
+2027-01-14,Uttarayan,STATE,GJ
+2027-01-15,Pongal,STATE,TN
+2027-01-23,Netaji Jayanti,STATE,WB
+2027-01-24,UP Diwas,STATE,UP
+2027-01-26,Republic Day,NATIONAL,
+2027-02-05,Delhi local holiday (synthetic),STATE,DL
+2027-03-10,Id-ul-Fitr,NATIONAL,
+2027-03-22,Holi,NATIONAL,
+2027-03-26,Good Friday,NATIONAL,
+2027-04-07,Ugadi,STATE,KA
+2027-04-07,Gudi Padwa,STATE,MH
+2027-04-14,Dr. Ambedkar Jayanti,NATIONAL,
+2027-04-14,Tamil New Year,STATE,TN
+2027-05-01,Maharashtra Day,STATE,MH
+2027-05-17,Id-ul-Zuha (Bakrid),NATIONAL,
+2027-06-02,Telangana Formation Day,STATE,TG
+2027-08-15,Independence Day,NATIONAL,
+2027-09-14,Thiruvonam,STATE,KL
+2027-10-02,Gandhi Jayanti,NATIONAL,
+2027-10-29,Diwali,NATIONAL,
+2027-11-01,Kannada Rajyotsava,STATE,KA
+2027-12-25,Christmas,NATIONAL,

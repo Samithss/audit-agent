@@ -1,0 +1,29 @@
+{
+  "request_id": "REQ-02",
+  "source": "audit_requests/REQ-02_letter.pdf",
+  "lender_id": "L003",
+  "period": {"from": "2026-01-01", "to": "2026-06-30"},
+  "sample_file": "audit_requests/REQ-02_annexure_A_sample.csv",
+  "checks": [
+    {"check_id": "C1", "source_question": "Q1", "check_type": "VERIFICATION_BEFORE_DISCLOSURE", "params": {},
+     "source_text": "on every connected collection call the identity of the borrower was established before any outstanding amount was discussed",
+     "test": "On each connected call, successful ID verification precedes the first mention of an amount; no amount disclosed to a third party",
+     "assumptions": ["Wrong-number connections count as connected calls"]},
+    {"check_id": "C2", "source_question": "Q1", "check_type": "CALL_RECORDING", "params": {},
+     "source_text": "and furnish the call recording for each such call",
+     "test": "Every connected call has a recording/transcript in D5", "assumptions": []},
+    {"check_id": "C3", "source_question": "Q2", "check_type": "NOTICE_TIMELINE", "params": {},
+     "source_text": "demand notices and pre-legal notices triggered during the period were served ... within the timelines prescribed",
+     "test": "Service date (proof of delivery) on or before trigger date + N business days (D12)",
+     "assumptions": ["Notices are in scope when their trigger date falls inside the period"]}
+  ],
+  "severity_order": ["HIGH", "MEDIUM", "LOW"],
+  "severity_rules": [
+    {"check_type": "VERIFICATION_BEFORE_DISCLOSURE", "severity": "HIGH"},
+    {"check_type": "CALL_RECORDING", "severity": "MEDIUM"},
+    {"check_type": "NOTICE_TIMELINE", "gap_types": ["no_proof_of_service"], "severity": "HIGH"},
+    {"check_type": "NOTICE_TIMELINE", "gap_types": ["served_late"], "min_late_business_days": 6, "severity": "HIGH"},
+    {"check_type": "NOTICE_TIMELINE", "gap_types": ["served_late"], "severity": "MEDIUM"},
+    {"check_type": "*", "severity": "LOW"}
+  ]
+}

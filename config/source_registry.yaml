@@ -1,0 +1,19 @@
+# Where every piece of evidence lives, and the time zone of every timestamp.
+# Tools read this file; never hard-code a time zone anywhere else.
+default_borrower_timezone: Asia/Kolkata
+state_timezones: {}          # all Indian states -> Asia/Kolkata (default)
+
+sources:
+  accounts:      {code: D1,  file: d1_account_master_thin.csv,  key: account_id}
+  contact_log:   {code: D4,  file: d4_contact_history.csv,      key: contact_id,
+                  timestamps: {contact_ts: Asia/Kolkata}}        # IST, stored without offset
+  transcripts:   {code: D5,  file: d5_call_transcripts.csv,     key: [call_id, turn_no],
+                  timestamps: {turn_start_ts: UTC}}
+  consent:       {code: D10, file: d10_consent_registry.csv,    key: consent_id,
+                  timestamps: {captured_at: UTC, opt_out_at: UTC}}
+  templates:     {code: D11, file: d11_template_registry.csv,   key: template_id}
+  policy:        {code: D12, file: d12_policy_rules.csv,        key: rule_id}
+  notices:       {code: NOTICE, file: notice_dispatch_history.csv, key: notice_id}
+  holidays:      {code: HOL, file: holiday_calendar.csv}
+  roster:        {code: ROSTER, file: collector_roster.csv,     key: collector_id}
+  certificates:  {code: CERT, file: certification_register.csv, key: cert_id}
