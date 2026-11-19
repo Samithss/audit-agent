@@ -1,22 +1,20 @@
 import { useEffect, useState } from "react"
 import { api } from "../api"
-import LenderPeriodFields from "./LenderPeriodFields"
+import PeriodFields from "./PeriodFields"
 import AccountsField from "./AccountsField"
 
-function MessageRow({ msg, lenders, running, onStarted, onError }) {
+function MessageRow({ msg, running, onStarted, onError }) {
   const [accountsFile, setAccountsFile] = useState(null)
-  const [lenderId, setLenderId] = useState("")
   const [periodFrom, setPeriodFrom] = useState("")
   const [periodTo, setPeriodTo] = useState("")
   const [open, setOpen] = useState(false)
-  const canRun = (lenderId || accountsFile) && periodFrom && periodTo
+  const canRun = accountsFile && !!periodFrom === !!periodTo
 
   async function submit() {
     const fd = new FormData()
-    if (lenderId) fd.set("lender_id", lenderId)
     if (accountsFile) fd.set("accounts_file", accountsFile)
-    fd.set("period_from", periodFrom)
-    fd.set("period_to", periodTo)
+    if (periodFrom) fd.set("period_from", periodFrom)
+    if (periodTo) fd.set("period_to", periodTo)
     try {
       const { request_id } = await api.startInboxRun(msg.message_id, fd)
       onStarted(request_id)
@@ -38,8 +36,8 @@ function MessageRow({ msg, lenders, running, onStarted, onError }) {
       {open && (
         <div className="inbox-row-run">
           <AccountsField file={accountsFile} setFile={setAccountsFile} disabled={running} />
-          <LenderPeriodFields hasAccounts={!!accountsFile} lenders={lenders} lenderId={lenderId} setLenderId={setLenderId}
-            periodFrom={periodFrom} setPeriodFrom={setPeriodFrom} periodTo={periodTo} setPeriodTo={setPeriodTo} />
+          <PeriodFields
+        periodFrom={periodFrom} setPeriodFrom={setPeriodFrom} periodTo={periodTo} setPeriodTo={setPeriodTo} />
           <button className="primary" onClick={submit} disabled={!canRun || running}>
             {running ? "Running..." : "Run agent on this email"}
           </button>
@@ -49,7 +47,7 @@ function MessageRow({ msg, lenders, running, onStarted, onError }) {
   )
 }
 
-export default function InboxPane({ lenders, running, onStarted, onError }) {
+export default function InboxPane({ running, onStarted, onError }) {
   const [status, setStatus] = useState(null)
   const [messages, setMessages] = useState(null)
   const [loading, setLoading] = useState(false)
@@ -116,7 +114,7 @@ export default function InboxPane({ lenders, running, onStarted, onError }) {
       ) : (
         <div className="inbox-list">
           {messages.map((m) => (
-            <MessageRow key={m.message_id} msg={m} lenders={lenders} running={running} onStarted={onStarted} onError={onError} />
+            <MessageRow key={m.message_id} msg={m} running={running} onStarted={onStarted} onError={onError} />
           ))}
         </div>
       )}

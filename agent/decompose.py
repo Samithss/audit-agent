@@ -8,11 +8,15 @@ map goes into "unsupported" (reported, never silently dropped). checks.json stil
 only has a "checks" list for run_checks.py to execute, exactly as today --
 "unsupported" is an extra key run_checks.py ignores, meant for pack.py later.
 
-request_id / lender_id / period / sample_file are NOT guessed by the model -- in
-real operation you already know these from how the request arrived (sender,
-attachment name), the same way the hand-written checks.json files carry them
-separately from the checks list. The model's only job is: read the prose, produce
-checks + severity rules.
+request_id / lender_id / sample_file are NOT guessed by the model -- in real
+operation you already know these from how the request arrived (sender, attachment
+name), the same way the hand-written checks.json files carry them separately from
+the checks list. The model's job is: read the prose, produce checks + severity rules.
+
+The audit period is normally supplied by the caller. If the caller leaves it blank,
+the model may extract it from the letter, but only if the letter states it
+explicitly: the model must quote the exact words (verified verbatim) and the dates
+must parse and be in order. Otherwise decompose() raises rather than guess.
 """
 import json
 import re
@@ -40,27 +44,33 @@ GAP_TYPES_BY_CHECK = {
                                        "disclosure_after_failed_verification", "third_party_disclosure"],
     "CALL_RECORDING": ["recording_missing"],
     "NOTICE_TIMELINE": ["no_proof_of_service", "served_late"],
+    "CALLER_NUMBER_SERIES": ["non_160_caller"],
+    "MESSAGE_CONTENT": ["inappropriate_message"],
+    "CALL_CONDUCT": ["abusive_or_threatening_language"],
+    "FIELD_VISIT": ["visit_outside_hours"],
+    "SECURITY_RELEASE": ["security_not_released"],
+    "PENAL_CHARGES": ["penal_capitalised", "penal_on_penal", "penal_not_disclosed_in_reminder"],
 }
 
-# Fallback severity, used ONLY when the model didn't produce any rule at all
-# for a check_type it extracted (e.g. the request has no grading/severity
-# section of its own -- common for a short pasted email or ad hoc upload).
-# severity.grade() raises on an unmatched check_type/gap_type pair, so every
-# check_type the model actually used MUST end up with at least one rule --
-# this is the code-level guarantee for that, independent of whether the model
-# remembered to write one. A check_type the request DOES grade explicitly is
-# never touched here (see _fill_severity_defaults).
-DEFAULT_SEVERITY_ORDER = ["CRITICAL", "MAJOR", "MINOR"]
-DEFAULT_SEVERITY_BY_CHECK = {
-    "CONSENT_BEFORE_CONTACT": "CRITICAL",
-    "VERIFICATION_BEFORE_DISCLOSURE": "CRITICAL",
-    "AGENT_CERTIFICATION": "CRITICAL",
-    "TEMPLATE_APPROVED": "MAJOR",
-    "CALL_HOURS": "MAJOR",
-    "CALL_RECORDING": "MAJOR",
-    "NOTICE_TIMELINE": "MAJOR",
-    "CALL_FREQUENCY": "MINOR",
+CHECK_HELP = {
+    "CALLER_NUMBER_SERIES": "recovery calls made only from the dedicated 160-series number",
+    "MESSAGE_CONTENT": "WhatsApp/SMS text free of threats, shaming or privacy intrusion",
+    "CALL_CONDUCT": "agents did not threaten, abuse or mislead borrowers on calls",
+    "FIELD_VISIT": "field visits made only within the permitted hours",
+    "SECURITY_RELEASE": "securities released after the loan is repaid or closed",
+    "PENAL_CHARGES": "penal charges not capitalised, not levied on penal charges, and stated in reminders",
 }
+
+# Fallback severity, used ONLY when the request gives no grading for a check_type
+# it extracted (e.g. a short pasted email or ad hoc upload with no severity
+# section). Policy: treat an ungraded gap as the WORST level -- if the lender
+# didn't say how serious it is, report it as the most serious. When the request
+# has a scale of its own (e.g. P1/P2/P3) but skips one check, that scale's top
+# level is used so the fallback stays on the lender's own scale. severity.grade()
+# raises on an unmatched check_type/gap_type pair, so every check_type the model
+# actually used MUST end up with at least one rule -- this is the code-level
+# guarantee for that. A check_type the request DOES grade is never touched.
+DEFAULT_SEVERITY_ORDER = ["CRITICAL"]
 
 
 class CheckSpec(BaseModel):
@@ -80,7 +90,14 @@ class SeverityRule(BaseModel):
     severity: str
 
 
+class PeriodSpec(BaseModel):
+    from_date: str   # ISO YYYY-MM-DD
+    to_date: str     # ISO YYYY-MM-DD, inclusive
+    source_text: str # exact words in the request that state the period
+
+
 class Decomposition(BaseModel):
+    period: Optional[PeriodSpec] = None
     checks: list[CheckSpec]
     severity_order: list[str]
     severity_rules: list[SeverityRule]
@@ -118,6 +135,8 @@ Regards,
 Internal Audit - Retail Collections, L001"""
 
 _EXAMPLE_OUTPUT = {
+    "period": {"from_date": "2026-01-01", "to_date": "2026-03-31",
+               "source_text": "covering the period 1 January 2026 to 31 March 2026"},
     "checks": [
         {"check_id": "C1", "source_question": "Q1", "check_type": "CONSENT_BEFORE_CONTACT",
          "params": {"channel": "WHATSAPP"},
@@ -155,6 +174,7 @@ SYSTEM_PROMPT = f"""You read an audit request email or letter from a lender and 
 into a structured checklist.
 
 The ONLY check types that exist are: {", ".join(CHECK_TYPES)}.
+{chr(10).join(f"  {k}: {v}" for k, v in CHECK_HELP.items())}
 Never invent a new check_type. If a sentence asks for something that doesn't map to
 one of these, still include it as a check but set check_type to "UNSUPPORTED" --
 never silently drop a requirement.
@@ -182,7 +202,15 @@ Most rules don't need "gap_types" at all -- only add it when the request's gradi
 text explicitly distinguishes sub-cases within one check_type (like REQ-02's notice
 rules below, which split "no proof of service" from "served late").
 
-Respond with ONLY a JSON object: {{"checks": [...], "severity_order": [...], "severity_rules": [...]}}
+Also extract the audit period the request asks about, as "period":
+{{"from_date": "YYYY-MM-DD", "to_date": "YYYY-MM-DD", "source_text": "<exact words from the request>"}}.
+Dates are inclusive and must be ISO. source_text must be copied verbatim, like a check's, and
+must contain BOTH the start date and the end date written out in full (e.g. "1 January 2026 to
+31 March 2026"). Only fill this in if the request states both dates. A named quarter or month
+("Q1 2026", "Jan-Mar"), a subject line, the email's sent date or a deadline is NOT enough --
+then set "period" to null. Never guess.
+
+Respond with ONLY a JSON object: {{"period": {{...}} or null, "checks": [...], "severity_order": [...], "severity_rules": [...]}}
 No text before or after the JSON.
 
 --- WORKED EXAMPLE ---
@@ -213,18 +241,89 @@ def _fill_severity_defaults(checks: list[dict], severity_order: list[str], sever
     only fills in check_types with ZERO rules at all."""
     severity_order = list(severity_order) or list(DEFAULT_SEVERITY_ORDER)
     severity_rules = list(severity_rules)
+    worst_level = severity_order[0]  # the request's own top level, or CRITICAL if it gave no scale
     mentioned = {r.get("check_type") for r in severity_rules}
     for check_type in dict.fromkeys(c["check_type"] for c in checks):
-        if check_type in mentioned:
-            continue
-        severity = DEFAULT_SEVERITY_BY_CHECK.get(check_type, "MAJOR")
-        severity_rules.append({"check_type": check_type, "severity": severity})
-        if severity not in severity_order:
-            severity_order.append(severity)
+        if check_type not in mentioned:
+            severity_rules.append({"check_type": check_type, "severity": worst_level})
     return severity_order, severity_rules
 
 
-def decompose(request_text: str, request_id: str, lender_id: str, period: dict, sample_file: str,
+_MONTH = r"(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)"
+_DATE_RES = [
+    rf"\b\d{{1,2}}(?:st|nd|rd|th)?\s+(?:of\s+)?{_MONTH}\.?,?\s+\d{{4}}\b",   # 1 January 2026
+    rf"\b{_MONTH}\.?\s+\d{{1,2}}(?:st|nd|rd|th)?,?\s+\d{{4}}\b",              # January 1, 2026
+    r"\b\d{4}-\d{2}-\d{2}\b",                                                   # 2026-01-01
+    r"\b\d{1,2}[/.-]\d{1,2}[/.-]\d{4}\b",                                       # 01/01/2026 (day first)
+]
+
+
+def _dates_in(text: str) -> set:
+    """Every fully-written calendar date in `text`. Deterministic: this is what
+    decides whether the model's quoted period really names a start and an end."""
+    from dateutil import parser
+    found = set()
+    for rx in _DATE_RES:
+        for m in re.finditer(rx, text, flags=re.I):
+            try:
+                found.add(parser.parse(m.group(0).replace("of ", ""), dayfirst=True).date())
+            except (ValueError, OverflowError):
+                pass
+    return found
+
+
+def _resolve_period(given: Optional[dict], extracted: Optional[PeriodSpec], request_text: str) -> tuple[dict, str]:
+    """Caller-supplied dates always win. Otherwise use the model's extraction, but
+    only if it is verbatim in the request, parses as ISO dates and is in order."""
+    from datetime import date
+    if given and given.get("from") and given.get("to"):
+        return {"from": given["from"], "to": given["to"]}, "entered"
+    fail = ValueError("Could not find an explicit audit period in the request -- "
+                      "enter the 'Period from' and 'Period to' dates and run again.")
+    if extracted is None or _normalize_ws(extracted.source_text) not in _normalize_ws(request_text):
+        raise fail
+    try:
+        f, t = date.fromisoformat(extracted.from_date), date.fromisoformat(extracted.to_date)
+    except ValueError:
+        raise fail
+    if f > t:
+        raise fail
+    # The quoted words themselves must contain both dates -- so "Q1 2026" in a
+    # subject line, or dates the model made up, can never become the period.
+    if not {f, t} <= _dates_in(extracted.source_text):
+        raise fail
+    return {"from": f.isoformat(), "to": t.isoformat()}, "extracted"
+
+
+def decompose_from_guidelines(guideline_ids: list, request_id: str, lender_id: str, period: Optional[dict],
+                              sample_file: str, source: str = "", base: Optional[dict] = None) -> dict:
+    """Checks come from the chosen guidelines instead of (or on top of) the request text."""
+    from .guidelines import checks_for
+    if base is None:
+        if not (period and period.get("from") and period.get("to")):
+            raise ValueError("Enter the 'Period from' and 'Period to' dates -- there is no request text to read them from.")
+        order, rules = _fill_severity_defaults([], [], [])
+        base = {"request_id": request_id, "source": source, "lender_id": lender_id,
+                "period": {"from": period["from"], "to": period["to"]}, "period_source": "entered",
+                "sample_file": sample_file, "checks": [], "unsupported": [],
+                "severity_order": order, "severity_rules": rules}
+    key = lambda c: (c["check_type"], (c.get("params") or {}).get("channel"))
+    have = {key(c) for c in base["checks"]}
+    new, skipped = [], []
+    for c in checks_for(guideline_ids, len(base["checks"]) + 1):
+        (skipped if key(c) in have else new).append(c)
+        have.add(key(c))
+    for i, c in enumerate(new):          # renumber after dropping duplicates of checks the request already asked for
+        c["check_id"] = f"C{len(base['checks']) + i + 1}"
+    base["checks"] = base["checks"] + new
+    base["guideline_checks_already_in_request"] = [c["source_question"] for c in skipped]
+    base["severity_order"], base["severity_rules"] = _fill_severity_defaults(
+        base["checks"], base["severity_order"], base["severity_rules"])
+    base["source"] = (base["source"] + " + " if base["source"] else "") + "selected guidelines"
+    return base
+
+
+def decompose(request_text: str, request_id: str, lender_id: str, period: Optional[dict], sample_file: str,
               source: str = "") -> dict:
     """Returns a dict in the same shape as eval/hand_checks/REQ-0X.json, plus an
     extra "unsupported" key. Raises if the model's output doesn't validate -- callers
@@ -246,6 +345,8 @@ def decompose(request_text: str, request_id: str, lender_id: str, period: dict, 
         else:
             unsupported.append(c.model_dump())
 
+    period, period_source = _resolve_period(period, parsed.period, request_text)
+
     severity_order, severity_rules = _fill_severity_defaults(
         checks, parsed.severity_order, [r.model_dump(exclude_none=True) for r in parsed.severity_rules]
     )
@@ -255,6 +356,7 @@ def decompose(request_text: str, request_id: str, lender_id: str, period: dict, 
         "source": source,
         "lender_id": lender_id,
         "period": period,
+        "period_source": period_source,
         "sample_file": sample_file,
         "checks": checks,
         "unsupported": unsupported,

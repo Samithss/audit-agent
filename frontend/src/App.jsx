@@ -21,7 +21,6 @@ const TABS = [
 export default function App() {
   const [mode, setMode] = useState("sample")
   const [requests, setRequests] = useState([])
-  const [lenders, setLenders] = useState([])
   const [selected, setSelected] = useState("")
   const [text, setText] = useState("")
   const [activeRequestId, setActiveRequestId] = useState(null)
@@ -36,7 +35,6 @@ export default function App() {
       setRequests(rs)
       if (rs.length) setSelected(rs[0].request_id)
     }).catch((e) => setLoadError(e.message))
-    api.listLenders().then(setLenders).catch((e) => setLoadError(e.message))
 
     const params = new URLSearchParams(window.location.search)
     if (params.get("inbox") === "connected") {
@@ -135,10 +133,10 @@ export default function App() {
         />
       )}
       {mode === "upload" && (
-        <UploadPane lenders={lenders} running={running} onStarted={onRunStarted} onError={setLoadError} />
+        <UploadPane running={running} onStarted={onRunStarted} onError={setLoadError} />
       )}
       {mode === "inbox" && (
-        <InboxPane lenders={lenders} running={running} onStarted={onRunStarted} onError={setLoadError} />
+        <InboxPane running={running} onStarted={onRunStarted} onError={setLoadError} />
       )}
 
       <RunLog log={run.log} status={run.status} error={run.error} />
@@ -147,7 +145,7 @@ export default function App() {
         <>
           <ChecksPane decomposed={result.decomposed} />
           <SummaryPane summary={result.summary} />
-          <GapsPane gaps={gaps} />
+          <GapsPane requestId={activeRequestId} gaps={gaps} />
           <ScorecardPane requestId={activeRequestId} score={result.score} letter={result.letter} />
           <ReplyPane requestId={activeRequestId} letter={result.letter} replyTo={result.reply_to} replied={result.replied} />
         </>

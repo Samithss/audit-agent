@@ -267,6 +267,139 @@ def notice_timeline(ctx, spec, accounts):
     return out
 
 
+
+# ================================================================== guideline checks (see data/rbi_guidelines.csv)
+import re
+from datetime import time as _time
+
+import pandas as pd
+
+# Phrases that RBI-style conduct rules prohibit (threats, shaming, privacy intrusion). A keyword screen, so
+# every hit is cited with the exact words for a human to confirm.
+CONDUCT_RE = re.compile(
+    r"\b(police|jail|arrest(ed)?|employer|neighbou?rs?|chor|cheat|shame|your family|"
+    r"send (people|men)|goons?|bhej denge|bata denge)\b", re.I)
+
+
+def _blank(x):
+    return x is None or (isinstance(x, float) and pd.isna(x)) or str(x).strip() == ""
+
+
+def _in_period(ctx, series):
+    d = pd.to_datetime(series, errors="coerce").dt.date
+    return d.notna() & (d >= ctx.start) & (d <= ctx.end)
+
+
+def _verdicts(ctx, spec, accounts, df, judge, rule):
+    """judge(row) -> (list[Finding], evidence_ids). One Verdict per account."""
+    by_acc = _group(df)
+    out = []
+    for a in accounts:
+        c = by_acc.get(a)
+        if c is None:
+            out.append(ctx.V(spec, a, items_tested=0)); continue
+        gaps, ev = [], []
+        for r in c.itertuples():
+            g, e = judge(r)
+            gaps += g
+            ev += e
+        out.append(ctx.V(spec, a, items_tested=len(c), gaps=gaps, evidence_ids=ev, rule_refs=[rule]))
+    return out
+
+
+def caller_number_series(ctx, spec, accounts):
+    calls = ctx.tools.contact_log(accounts, "VOICE", ctx.start, ctx.end)
+    nums = ctx.tools.extra("caller_numbers").set_index("contact_id")["caller_number"]
+    calls["caller_number"] = calls["contact_id"].map(nums).fillna("")
+
+    def judge(r):
+        if str(r.caller_number).startswith("160"):
+            return [], [r.contact_id]
+        return [Finding("non_160_caller", [r.contact_id],
+                        f"Call at {r.ts_raw} IST was made from {r.caller_number or 'an unknown number'}, "
+                        f"not the dedicated 160-series number")], []
+    return _verdicts(ctx, spec, accounts, calls, judge, "G-VOICE-07")
+
+
+def message_content(ctx, spec, accounts):
+    channel = spec.get("params", {}).get("channel")
+    msgs = pd.concat([ctx.tools.contact_log(accounts, ch, ctx.start, ctx.end)
+                      for ch in ([channel] if channel else ["WHATSAPP", "SMS"])])
+    text = ctx.tools.extra("message_content").set_index("contact_id")["message_text"]
+    msgs["text"] = msgs["contact_id"].map(text).fillna("")
+
+    def judge(r):
+        m = CONDUCT_RE.search(r.text)
+        if m:
+            return [Finding("inappropriate_message", [r.contact_id],
+                            f'{r.channel} message at {r.ts_raw} IST contains "{m.group(0)}": "{r.text[:120]}"')], []
+        return [], [r.contact_id]
+    return _verdicts(ctx, spec, accounts, msgs, judge, "G-DIG-05")
+
+
+def call_conduct(ctx, spec, accounts):
+    calls = _connected(ctx, accounts)
+    said = {}   # call_id -> [(source, text)]
+    tx = ctx.tools.transcripts(calls.contact_id)
+    for r in tx[tx.speaker == "AGENT"].itertuples():
+        said.setdefault(r.call_id, []).append((f"transcript turn {r.turn_no}", r.text))
+    for r in ctx.tools.extra("call_conduct_log").itertuples():
+        said.setdefault(r.call_id, []).append(("QA log", r.utterance))
+
+    def judge(r):
+        for src, t in said.get(r.contact_id, []):
+            m = CONDUCT_RE.search(t)
+            if m:
+                return [Finding("abusive_or_threatening_language", [r.contact_id],
+                                f'Call at {r.ts_raw} IST ({src}): agent said "{t[:140]}"')], []
+        return [], [r.contact_id]
+    return _verdicts(ctx, spec, accounts, calls, judge, "G-VOICE-06")
+
+
+def field_visit(ctx, spec, accounts):
+    """Field visits only inside the permitted hours (default 09:00-18:00)."""
+    p = spec.get("params", {})
+    lo = _time.fromisoformat(p.get("from", "09:00")); hi = _time.fromisoformat(p.get("to", "18:00"))
+    v = ctx.tools.extra("field_visits")
+    v = v[v.account_id.isin(set(accounts)) & _in_period(ctx, v.visit_ts)].copy()
+    v["ts"] = pd.to_datetime(v.visit_ts)
+
+    def judge(r):
+        if lo <= r.ts.time() <= hi:
+            return [], [r.visit_id]
+        return [Finding("visit_outside_hours", [r.visit_id], f"Visit at {r.visit_ts}; allowed {lo:%H:%M}-{hi:%H:%M}")], []
+    return _verdicts(ctx, spec, accounts, v, judge, "G-FLD-01")
+
+
+def security_release(ctx, spec, accounts):
+    c = ctx.tools.extra("closures")
+    c = c[c.account_id.isin(set(accounts)) & _in_period(ctx, c.closure_date)].copy()
+
+    def judge(r):
+        if not _blank(r.security_release_date):
+            return [], [r.closure_id]
+        return [Finding("security_not_released", [r.closure_id],
+                        f"Loan closed {r.closure_date} ({r.closure_type}); {r.security_held} not released")], []
+    return _verdicts(ctx, spec, accounts, c, judge, "G-PAY-01")
+
+
+def penal_charges(ctx, spec, accounts):
+    c = ctx.tools.extra("penal_charges")
+    c = c[c.account_id.isin(set(accounts)) & _in_period(ctx, c.charge_date)].copy()
+
+    def judge(r):
+        g = []
+        if r.capitalised == "Y":
+            g.append(Finding("penal_capitalised", [r.charge_id], f"Penal charge of {r.penal_charge_amount} on {r.charge_date} was capitalised"))
+        if r.charged_on_penal == "Y":
+            g.append(Finding("penal_on_penal", [r.charge_id], f"Penal charge on {r.charge_date} levied on earlier penal charges"))
+        if not _blank(r.reminder_contact_id) and r.reminder_states_penal_charge == "N":
+            g.append(Finding("penal_not_disclosed_in_reminder", [r.charge_id, r.reminder_contact_id],
+                             f"Reminder {r.reminder_contact_id} did not state the applicable penal charges"))
+        return g, ([] if g else [r.charge_id])
+    return _verdicts(ctx, spec, accounts, c, judge, "G-PAY-02")
+
+
 CHECKS = {
     "CONSENT_BEFORE_CONTACT": consent_before_contact,
     "TEMPLATE_APPROVED": template_approved,
@@ -276,4 +409,10 @@ CHECKS = {
     "VERIFICATION_BEFORE_DISCLOSURE": verification_before_disclosure,
     "CALL_RECORDING": call_recording,
     "NOTICE_TIMELINE": notice_timeline,
+    "CALLER_NUMBER_SERIES": caller_number_series,
+    "MESSAGE_CONTENT": message_content,
+    "CALL_CONDUCT": call_conduct,
+    "FIELD_VISIT": field_visit,
+    "SECURITY_RELEASE": security_release,
+    "PENAL_CHARGES": penal_charges,
 }

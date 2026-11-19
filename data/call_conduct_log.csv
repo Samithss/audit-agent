@@ -1,0 +1,85 @@
+call_id,account_id,collector_id,speaker,utterance,logged_by
+CT10052483,ACC101721,COL-0019,AGENT,I will send people to your house tonight if you do not pay.,QA_SAMPLE
+CT10016966,ACC100552,COL-0020,AGENT,"Tum chor ho, sab ko bata denge ki tum paisa nahi dete.",QA_SAMPLE
+CT10057830,ACC101891,COL-0013,AGENT,You will go to jail if you do not pay today.,QA_SAMPLE
+CT10016897,ACC100550,COL-0021,AGENT,We will tell your employer and your neighbours about this loan.,QA_SAMPLE
+CT10009345,ACC100300,COL-0006,AGENT,We will tell your employer and your neighbours about this loan.,QA_SAMPLE
+CT10057162,ACC101872,COL-0007,AGENT,"Tum chor ho, sab ko bata denge ki tum paisa nahi dete.",QA_SAMPLE
+CT10059807,ACC101960,COL-0024,AGENT,"Tum chor ho, sab ko bata denge ki tum paisa nahi dete.",QA_SAMPLE
+CT10004141,ACC100127,COL-0036,AGENT,You will go to jail if you do not pay today.,QA_SAMPLE
+CT10033209,ACC101082,col86,AGENT,"Tum chor ho, sab ko bata denge ki tum paisa nahi dete.",QA_SAMPLE
+CT10030857,ACC101004,COL-0062,AGENT,"Tum chor ho, sab ko bata denge ki tum paisa nahi dete.",QA_SAMPLE
+CT10026415,ACC100859,COL-0053,AGENT,You will go to jail if you do not pay today.,QA_SAMPLE
+CT10023581,ACC100765,COL-0067,AGENT,We will tell your employer and your neighbours about this loan.,QA_SAMPLE
+CT10004116,ACC100126,COL-0017,AGENT,You will go to jail if you do not pay today.,QA_SAMPLE
+CT10009753,ACC100316,COL-0013,AGENT,I will send people to your house tonight if you do not pay.,QA_SAMPLE
+CT10042000,ACC101368,COL-0020,AGENT,I will send people to your house tonight if you do not pay.,QA_SAMPLE
+CT10053936,ACC101766,COL0117,AGENT,Agar aaj paise nahi diye toh police ko bhej denge.,QA_SAMPLE
+CT10048394,ACC101580,COL0117,AGENT,"Tum chor ho, sab ko bata denge ki tum paisa nahi dete.",QA_SAMPLE
+CT10048997,ACC101602,COL0120,AGENT,"Tum chor ho, sab ko bata denge ki tum paisa nahi dete.",QA_SAMPLE
+CT10004861,ACC100151,COL-0015,AGENT,You will go to jail if you do not pay today.,QA_SAMPLE
+CT10041327,ACC101345,col86,AGENT,I will send people to your house tonight if you do not pay.,QA_SAMPLE
+CT10057457,ACC101881,COL0100,AGENT,We will tell your employer and your neighbours about this loan.,QA_SAMPLE
+CT10028052,ACC100915,COL-0060,AGENT,"Tum chor ho, sab ko bata denge ki tum paisa nahi dete.",QA_SAMPLE
+CT10053770,ACC101761,COL-0014,AGENT,"Tum chor ho, sab ko bata denge ki tum paisa nahi dete.",QA_SAMPLE
+CT10011649,ACC100378,COL-0035,AGENT,"Tum chor ho, sab ko bata denge ki tum paisa nahi dete.",QA_SAMPLE
+CT10039670,ACC101290,col83,AGENT,We will tell your employer and your neighbours about this loan.,QA_SAMPLE
+CT10034299,ACC101117,COL-0062,AGENT,Agar aaj paise nahi diye toh police ko bhej denge.,QA_SAMPLE
+CT10048684,ACC101591,COL-0024,AGENT,We will tell your employer and your neighbours about this loan.,QA_SAMPLE
+CT10024566,ACC100799,COL-0061,AGENT,You will go to jail if you do not pay today.,QA_SAMPLE
+CT10022453,ACC100731,COL-0070,AGENT,We will tell your employer and your neighbours about this loan.,QA_SAMPLE
+CT10022636,ACC100737,col85,AGENT,I will send people to your house tonight if you do not pay.,QA_SAMPLE
+CT10011917,ACC100388,COL-0007,AGENT,I will send people to your house tonight if you do not pay.,QA_SAMPLE
+CT10035081,ACC101143,col76,AGENT,"Tum chor ho, sab ko bata denge ki tum paisa nahi dete.",QA_SAMPLE
+CT10015557,ACC100503,COL-0041,AGENT,We will tell your employer and your neighbours about this loan.,QA_SAMPLE
+CT10009693,ACC100313,COL-0034,AGENT,We will tell your employer and your neighbours about this loan.,QA_SAMPLE
+CT10000379,ACC100013,COL-0012,AGENT,Agar aaj paise nahi diye toh police ko bhej denge.,QA_SAMPLE
+CT10033386,ACC101087,col77,AGENT,I will send people to your house tonight if you do not pay.,QA_SAMPLE
+CT10047503,ACC101551,COL-0014,AGENT,Agar aaj paise nahi diye toh police ko bhej denge.,QA_SAMPLE
+CT10020822,ACC100678,COL-0011,AGENT,Agar aaj paise nahi diye toh police ko bhej denge.,QA_SAMPLE
+CT10027684,ACC100900,col84,AGENT,Agar aaj paise nahi diye toh police ko bhej denge.,QA_SAMPLE
+CT10036314,ACC101185,COL-0051,AGENT,You will go to jail if you do not pay today.,QA_SAMPLE
+CT10002852,ACC100086,COL-0028,AGENT,I will send people to your house tonight if you do not pay.,QA_SAMPLE
+CT10001528,ACC100048,COL-0019,AGENT,"Tum chor ho, sab ko bata denge ki tum paisa nahi dete.",QA_SAMPLE
+CT10015727,ACC100508,COL-0027,AGENT,I will send people to your house tonight if you do not pay.,QA_SAMPLE
+CT10009489,ACC100305,COL-0023,AGENT,"Tum chor ho, sab ko bata denge ki tum paisa nahi dete.",QA_SAMPLE
+CT10033631,ACC101096,COL-0056,AGENT,"Tum chor ho, sab ko bata denge ki tum paisa nahi dete.",QA_SAMPLE
+CT10038508,ACC101254,COL-0071,AGENT,We will tell your employer and your neighbours about this loan.,QA_SAMPLE
+CT10020231,ACC100660,COL-0013,AGENT,I will send people to your house tonight if you do not pay.,QA_SAMPLE
+CT10058718,ACC101924,COL0120,AGENT,You will go to jail if you do not pay today.,QA_SAMPLE
+CT10029546,ACC100960,COL-0071,AGENT,You will go to jail if you do not pay today.,QA_SAMPLE
+CT10012980,ACC100420,COL-0014,AGENT,"Tum chor ho, sab ko bata denge ki tum paisa nahi dete.",QA_SAMPLE
+CT10049527,ACC101618,COL0116,AGENT,You will go to jail if you do not pay today.,QA_SAMPLE
+CT10014618,ACC100475,COL-0024,AGENT,"Tum chor ho, sab ko bata denge ki tum paisa nahi dete.",QA_SAMPLE
+CT10054991,ACC101800,COL-0021,AGENT,Agar aaj paise nahi diye toh police ko bhej denge.,QA_SAMPLE
+CT10045046,ACC101470,COL-0001,AGENT,We will tell your employer and your neighbours about this loan.,QA_SAMPLE
+CT10033067,ACC101077,col84,AGENT,You will go to jail if you do not pay today.,QA_SAMPLE
+CT10046890,ACC101530,COL-0005,AGENT,You will go to jail if you do not pay today.,QA_SAMPLE
+CT10058755,ACC101925,COL-0004,AGENT,You will go to jail if you do not pay today.,QA_SAMPLE
+CT10020723,ACC100675,COL-0003,AGENT,We will tell your employer and your neighbours about this loan.,QA_SAMPLE
+CT10018821,ACC100616,COL-0019,AGENT,You will go to jail if you do not pay today.,QA_SAMPLE
+CT10018973,ACC100620,COL-0041,AGENT,"Tum chor ho, sab ko bata denge ki tum paisa nahi dete.",QA_SAMPLE
+CT10049444,ACC101615,COL0113,AGENT,I will send people to your house tonight if you do not pay.,QA_SAMPLE
+CT10034166,ACC101112,COL-0072,AGENT,I will send people to your house tonight if you do not pay.,QA_SAMPLE
+CT10048089,ACC101571,COL0116,AGENT,We will tell your employer and your neighbours about this loan.,QA_SAMPLE
+CT10021429,ACC100697,COL-0033,AGENT,You will go to jail if you do not pay today.,QA_SAMPLE
+CT10047739,ACC101559,COL-0018,AGENT,You will go to jail if you do not pay today.,QA_SAMPLE
+CT10026402,ACC100858,col76,AGENT,You will go to jail if you do not pay today.,QA_SAMPLE
+CT10056016,ACC101832,COL-0023,AGENT,"Tum chor ho, sab ko bata denge ki tum paisa nahi dete.",QA_SAMPLE
+CT10042930,ACC101402,COL0109,AGENT,Agar aaj paise nahi diye toh police ko bhej denge.,QA_SAMPLE
+CT10009206,ACC100296,COL-0030,AGENT,You will go to jail if you do not pay today.,QA_SAMPLE
+CT10014104,ACC100457,COL-0027,AGENT,I will send people to your house tonight if you do not pay.,QA_SAMPLE
+CT10040489,ACC101316,COL-0055,AGENT,I will send people to your house tonight if you do not pay.,QA_SAMPLE
+CT10000403,ACC100014,COL-0014,AGENT,"Tum chor ho, sab ko bata denge ki tum paisa nahi dete.",QA_SAMPLE
+CT10032327,ACC101052,col91,AGENT,"Tum chor ho, sab ko bata denge ki tum paisa nahi dete.",QA_SAMPLE
+CT10008479,ACC100272,COL-0019,AGENT,"Tum chor ho, sab ko bata denge ki tum paisa nahi dete.",QA_SAMPLE
+CT10028608,ACC100932,col84,AGENT,You will go to jail if you do not pay today.,QA_SAMPLE
+CT10030555,ACC100994,COL-0062,AGENT,We will tell your employer and your neighbours about this loan.,QA_SAMPLE
+CT10037319,ACC101216,col91,AGENT,You will go to jail if you do not pay today.,QA_SAMPLE
+CT10030111,ACC100978,COL-0072,AGENT,You will go to jail if you do not pay today.,QA_SAMPLE
+CT10057734,ACC101889,COL-0020,AGENT,"Tum chor ho, sab ko bata denge ki tum paisa nahi dete.",QA_SAMPLE
+CT10037613,ACC101226,COL-0057,AGENT,Agar aaj paise nahi diye toh police ko bhej denge.,QA_SAMPLE
+CT10022097,ACC100720,col91,AGENT,We will tell your employer and your neighbours about this loan.,QA_SAMPLE
+CT10009808,ACC100317,COL-0041,AGENT,"Tum chor ho, sab ko bata denge ki tum paisa nahi dete.",QA_SAMPLE
+CT10019760,ACC100644,COL-0028,AGENT,Agar aaj paise nahi diye toh police ko bhej denge.,QA_SAMPLE
+CT10050960,ACC101668,COL-0019,AGENT,I will send people to your house tonight if you do not pay.,QA_SAMPLE

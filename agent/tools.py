@@ -166,6 +166,11 @@ class Tools:
         df["valid_to"] = pd.to_datetime(df["valid_to"]).dt.date
         return df
 
+    # ------------------------------------------------------------------ guideline-check tables
+    def extra(self, name):
+        """caller_numbers, message_content, call_conduct_log, field_visits, closures, penal_charges."""
+        return self._raw(name).copy()
+
     # ------------------------------------------------------------------ warehouse SQL (read-only)
     def sql(self, query: str) -> pd.DataFrame:
         """Read-only SQL straight against Postgres. Tables are schema-qualified:

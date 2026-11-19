@@ -24,6 +24,13 @@ TABLES = {
     "audit.holidays": "holiday_calendar.csv",
     "audit.roster": "collector_roster.csv",
     "audit.certificates": "certification_register.csv",
+    "audit.guidelines": "rbi_guidelines.csv",
+    "audit.caller_numbers": "caller_numbers.csv",
+    "audit.message_content": "message_content.csv",
+    "audit.call_conduct_log": "call_conduct_log.csv",
+    "audit.field_visits": "field_visits.csv",
+    "audit.closures": "closures.csv",
+    "audit.penal_charges": "penal_charges.csv",
 }
 
 

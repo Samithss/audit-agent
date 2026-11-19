@@ -31,7 +31,13 @@ export default function ScorecardPane({ requestId, score, letter }) {
           Validator passed -- every claim cites the summary, no softening language, DRAFT disclaimer present.
         </p>
       )}
-      <pre className="letter-text">{letter.text}</pre>
+      <div className="letter-text">
+        {letter.text.split("\n\n").map((blk, i) =>
+          blk.trim().startsWith("|")
+            ? <pre key={i} className="letter-table">{blk}</pre>
+            : <p key={i}>{blk}</p>
+        )}
+      </div>
 
       <h2>Downloads</h2>
       <div className="row">
