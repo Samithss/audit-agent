@@ -5,7 +5,7 @@ export default function SummaryPane({ summary }) {
   cols.sort((a, b) => (a === "check" ? 0.5 : cols.indexOf(a)) - (b === "check" ? 0.5 : cols.indexOf(b)))
   return (
     <section className="pane">
-      <h2>3. Run summary</h2>
+      <div className="pane-head"><div><h2><span className="step">2</span>Run summary</h2><p className="pane-sub">Accounts per check and outcome.</p></div></div>
       <div className="table-scroll">
         <table className="data-table">
           <thead>

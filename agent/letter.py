@@ -165,15 +165,31 @@ def iter_blocks(text: str):
     HTML email in gmail_client.send_reply -- needs the same parse, so it lives
     in one place: a block of lines that all start with "|" is the table, and
     the |---|---| separator row is dropped."""
-    for para in text.split("\n\n"):
-        if not para.strip():
-            continue
-        lines = para.strip().split("\n")
-        if all(l.startswith("|") for l in lines):
-            yield "table", [[c.strip() for c in l.strip().strip("|").split("|")]
-                            for l in lines if not set(l) <= set("|- ")]
+    para, table = [], []
+
+    def flush_para():
+        if para and "\n".join(para).strip():
+            yield "para", "\n".join(para).strip()
+        para.clear()
+
+    def flush_table():
+        rows = [[c.strip() for c in l.strip().strip("|").split("|")] for l in table if not set(l.strip()) <= set("|- :")]
+        table.clear()
+        if rows:
+            yield "table", rows
+
+    for line in text.replace("\r\n", "\n").split("\n"):
+        if line.strip().startswith("|"):          # a table row, even with no blank line around it
+            yield from flush_para()
+            table.append(line.strip())
+        elif not line.strip():
+            yield from flush_table()
+            yield from flush_para()
         else:
-            yield "para", para.strip()
+            yield from flush_table()
+            para.append(line)
+    yield from flush_table()
+    yield from flush_para()
 
 
 def save_letter_docx(request_id: str, text: str, out_dir=OUT_DIR) -> Path:

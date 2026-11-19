@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react"
 import { api } from "./api"
 import Tabs from "./components/Tabs"
-import RequestPicker from "./components/RequestPicker"
+import Overview from "./components/Overview"
 import UploadPane from "./components/UploadPane"
 import InboxPane from "./components/InboxPane"
 import RunLog from "./components/RunLog"
@@ -13,16 +13,12 @@ import ReplyPane from "./components/ReplyPane"
 import "./App.css"
 
 const TABS = [
-  { id: "sample", label: "Sample requests" },
   { id: "upload", label: "Upload your own" },
   { id: "inbox", label: "Gmail inbox" },
 ]
 
 export default function App() {
-  const [mode, setMode] = useState("sample")
-  const [requests, setRequests] = useState([])
-  const [selected, setSelected] = useState("")
-  const [text, setText] = useState("")
+  const [mode, setMode] = useState("upload")
   const [activeRequestId, setActiveRequestId] = useState(null)
   const [run, setRun] = useState({ status: "idle", log: [], error: null })
   const [result, setResult] = useState(null)
@@ -31,11 +27,6 @@ export default function App() {
   const [inboxBanner, setInboxBanner] = useState(null)
 
   useEffect(() => {
-    api.listRequests().then((rs) => {
-      setRequests(rs)
-      if (rs.length) setSelected(rs[0].request_id)
-    }).catch((e) => setLoadError(e.message))
-
     const params = new URLSearchParams(window.location.search)
     if (params.get("inbox") === "connected") {
       setInboxBanner({ kind: "success", text: "Gmail connected." })
@@ -49,35 +40,11 @@ export default function App() {
     }
   }, [])
 
-  // sample mode: selecting a request shows its text and whatever status it already has
-  useEffect(() => {
-    if (mode !== "sample" || !selected) return
-    setActiveRequestId(selected)
-    setResult(null)
-    setGaps([])
-    api.getText(selected).then((r) => setText(r.text)).catch(() => setText(""))
-    api.getStatus(selected).then((s) => {
-      setRun(s)
-      if (s.status === "done") loadResult(selected)
-    })
-  }, [mode, selected])
-
   async function loadResult(id) {
     try {
       const [res, g] = await Promise.all([api.getResult(id), api.getGaps(id)])
       setResult(res)
       setGaps(g)
-    } catch (e) {
-      setLoadError(e.message)
-    }
-  }
-
-  async function onRunSample() {
-    setLoadError("")
-    setResult(null)
-    try {
-      await api.startRun(selected)
-      setRun({ status: "running", log: [], error: null })
     } catch (e) {
       setLoadError(e.message)
     }
@@ -129,51 +96,47 @@ export default function App() {
   const running = run.status === "running"
 
   return (
-    <div className="app">
-      <header className="app-header">
-        <h1>Audit evidence pack agent</h1>
-        <p className="muted">CO-04 -- CreditNirvana Agentathon</p>
+    <>
+      <header className="topbar">
+        <div className="topbar-inner">
+          <div className="brand">
+            <div className="brand-mark">A</div>
+            <div>
+              <h1>Audit evidence pack agent</h1>
+              <p>Turn an audit request into a tested, evidenced response</p>
+            </div>
+          </div>
+          <Tabs tabs={TABS} active={mode} onChange={setMode} />
+        </div>
       </header>
 
-      {loadError && <p className="error">{loadError}</p>}
-      {inboxBanner && (
-        <p className={`badge ${inboxBanner.kind === "success" ? "success" : "warning"}`}>{inboxBanner.text}</p>
-      )}
+      <div className="app">
+        {loadError && <p className="error">{loadError}</p>}
+        {inboxBanner && (
+          <p className={`badge ${inboxBanner.kind === "success" ? "success" : "warning"}`}>{inboxBanner.text}</p>
+        )}
 
-      <Tabs tabs={TABS} active={mode} onChange={setMode} />
+        {mode === "upload" && (
+          <UploadPane running={running} onStarted={onRunStarted} onError={setLoadError} />
+        )}
+        {mode === "inbox" && (
+          <InboxPane running={running} onStarted={onRunStarted} onView={onViewExisting} onError={setLoadError} />
+        )}
 
-      {mode === "sample" && (
-        <RequestPicker
-          requests={requests}
-          selected={selected}
-          onSelect={setSelected}
-          text={text}
-          running={running}
-          onRun={onRunSample}
-        />
-      )}
-      {mode === "upload" && (
-        <UploadPane running={running} onStarted={onRunStarted} onError={setLoadError} />
-      )}
-      {mode === "inbox" && (
-        <InboxPane running={running} onStarted={onRunStarted} onView={onViewExisting} onError={setLoadError} />
-      )}
+        <RunLog log={run.log} status={run.status} error={run.error} />
 
-      <RunLog log={run.log} status={run.status} error={run.error} />
-
-      {result ? (
-        <>
-          <ChecksPane decomposed={result.decomposed} />
-          <SummaryPane summary={result.summary} />
-          <GapsPane requestId={activeRequestId} gaps={gaps} />
-          <ScorecardPane requestId={activeRequestId} score={result.score} letter={result.letter} />
-          <ReplyPane requestId={activeRequestId} letter={result.letter} replyTo={result.reply_to} replied={result.replied} />
-        </>
-      ) : (
-        mode === "sample" && !running && activeRequestId && (
-          <p className="muted center">Click &ldquo;Run the agent&rdquo; above to process this request.</p>
-        )
-      )}
-    </div>
+        {result && (
+          <>
+            <Overview requestId={activeRequestId} summary={result.summary} checks={result.decomposed.checks} />
+            <ChecksPane decomposed={result.decomposed} />
+            <SummaryPane summary={result.summary} />
+            <GapsPane requestId={activeRequestId} gaps={gaps} />
+            <ScorecardPane score={result.score} letter={result.letter} />
+            <ReplyPane key={activeRequestId} requestId={activeRequestId} letter={result.letter}
+                       replyTo={result.reply_to} replied={result.replied} />
+          </>
+        )}
+      </div>
+    </>
   )
 }

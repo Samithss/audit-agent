@@ -24,23 +24,72 @@ def _autofit(ws):
 
 
 def build_gap_report(request_id: str, out_dir=OUT_DIR) -> Path:
-    od = Path(out_dir) / request_id
-    verdicts = pd.read_csv(od / "verdicts.csv", dtype=str)
-    gaps = pd.read_csv(od / "gap_items.csv", dtype=str)
-    summary = pd.read_csv(od / "summary.csv", dtype=str)
+    """The one evidence-pack file: everything the UI shows, in a workbook a
+    reviewer can filter. Sheets:
+      Overview        -- request, period, counts
+      Checks          -- every check run: what it tests, the request wording it came from
+      Account results -- one row per account x check, in plain English
+      Records tested  -- one row per record (call / message / visit ...) with pass/fail and why
+      Consent records -- the consent rows behind every consent check
+      Summary         -- counts per check and status
+      Gaps            -- one row per gap item, never merged
+      Cannot-Determine
+    """
+    from .explain import account_results, check_label
 
+    od = Path(out_dir) / request_id
+    spec = json.loads((od / "checks.json").read_text())
+    verdicts = pd.read_csv(od / "verdicts.csv", dtype=str).fillna("")
+    gaps = pd.read_csv(od / "gap_items.csv", dtype=str).fillna("")
+    summary = pd.read_csv(od / "summary.csv", dtype=str).fillna("")
+    labels = {c["check_id"]: check_label(c) for c in spec["checks"]}
+    summary.insert(1, "check", summary["check_id"].map(labels))
+    summary = summary.drop(columns=[c for c in ("check_type",) if c in summary.columns])
+
+    results = account_results(request_id)
+    acct_rows, rec_rows, consent_rows = [], [], []
+    for r in results:
+        base = dict(account_id=r["account_id"], check_id=r["check_id"], check=labels.get(r["check_id"], r["check_name"]),
+                    channel=r["channel_label"])
+        acct_rows.append(dict(base, result=r["status"].replace("_", " ").title(), severity=r.get("severity", ""),
+                              what_we_found=r["headline"], explanation=r["summary"], items_tested=r.get("items_tested", ""),
+                              rule=r.get("rule_refs", "")))
+        for i in r.get("items", []):
+            rec_rows.append(dict(base, record_id=i.get("contact_id", ""), time=i.get("time", ""),
+                                 outcome=i.get("outcome", ""), detail=i.get("result", "")))
+        for c in r.get("consent", []):
+            consent_rows.append(dict(base, consent_id=c.get("consent_id", ""), status=c.get("status", ""),
+                                     source=c.get("source", ""), captured=c.get("captured", ""),
+                                     opted_out=c.get("opted_out", "")))
+
+    checks_df = pd.DataFrame([dict(check_id=c["check_id"], check=labels[c["check_id"]], what_it_tests=c.get("test", ""),
+                                   request_wording=c.get("source_text", ""),
+                                   assumptions="; ".join(c.get("assumptions") or []))
+                              for c in spec["checks"]])
+    counts = verdicts.status.value_counts().to_dict()
+    overview = pd.DataFrame([
+        ("Request", request_id), ("Lender", spec.get("lender_id", "")),
+        ("Audit period", f"{spec['period']['from']} to {spec['period']['to']}"),
+        ("Accounts tested", verdicts.account_id.nunique()), ("Checks run", len(spec["checks"])),
+        ("Gap", counts.get("GAP", 0)), ("Cannot determine", counts.get("CANNOT_DETERMINE", 0)),
+        ("Evidenced", counts.get("EVIDENCED", 0)), ("Not applicable", counts.get("NOT_APPLICABLE", 0)),
+        ("Not tested (unsupported)", len(spec.get("unsupported", []))),
+    ], columns=["", "value"])
     cd = verdicts[verdicts.status == "CANNOT_DETERMINE"][
         ["account_id", "check_id", "check_type", "cannot_determine_reasons", "evidence_ids"]
     ].rename(columns={"cannot_determine_reasons": "reason", "evidence_ids": "record_ids"})
 
     path = od / "gap_report.xlsx"
+    sheets = [("Overview", overview), ("Checks", checks_df), ("Account results", pd.DataFrame(acct_rows)),
+              ("Records tested", pd.DataFrame(rec_rows)), ("Consent records", pd.DataFrame(consent_rows)),
+              ("Summary", summary), ("Gaps", gaps), ("Cannot-Determine", cd)]
     with pd.ExcelWriter(path, engine="openpyxl") as xl:
-        summary.to_excel(xl, sheet_name="Summary", index=False)
-        gaps.to_excel(xl, sheet_name="Gaps", index=False)  # one row per gap, never merged
-        cd.to_excel(xl, sheet_name="Cannot-Determine", index=False)
+        for name, df in sheets:
+            df.to_excel(xl, sheet_name=name, index=False)
         for sheet in xl.sheets.values():
             for cell in sheet[1]:
                 cell.font = Font(bold=True)
+            sheet.freeze_panes = "A2"
             _autofit(sheet)
     return path
 
@@ -95,7 +144,6 @@ def build_request_interpretation(request_id: str, decomposed_path, out_dir=OUT_D
 def build_pack(request_id: str, decomposed_path, out_dir=OUT_DIR) -> dict:
     return {
         "gap_report": str(build_gap_report(request_id, out_dir)),
-        "request_interpretation": str(build_request_interpretation(request_id, decomposed_path, out_dir)),
     }
 
 

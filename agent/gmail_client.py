@@ -150,11 +150,31 @@ def _find_pdf_attachment(payload):
     return None
 
 
-def list_candidate_messages(max_results: int = 20) -> list[dict]:
+def own_address() -> str:
+    """The connected mailbox's own address (cached) -- used to never list mail we sent."""
+    global _own
+    if _own is None:
+        try:
+            _own = _service().users().getProfile(userId="me").execute().get("emailAddress", "").lower()
+        except Exception:
+            _own = ""
+    return _own
+
+
+_own = None
+
+
+def list_candidate_messages(max_results: int = 30, skip_ids: set | None = None) -> list[dict]:
+    """Only INCOMING mail (never the Sent folder or anything from this mailbox),
+    and only metadata for ids not already in `skip_ids` -- so a refresh costs
+    one list call plus one fetch per genuinely new message."""
     svc = _service()
-    resp = svc.users().messages().list(userId="me", q=GMAIL_SEARCH_QUERY, maxResults=max_results).execute()
+    q = f"{GMAIL_SEARCH_QUERY} -in:sent -from:me"
+    resp = svc.users().messages().list(userId="me", q=q, maxResults=max_results).execute()
     out = []
     for m in resp.get("messages", []):
+        if skip_ids and m["id"] in skip_ids:
+            continue
         msg = svc.users().messages().get(userId="me", id=m["id"], format="metadata",
                                          metadataHeaders=["Subject", "From", "Date"]).execute()
         headers = {h["name"]: h["value"] for h in msg["payload"].get("headers", [])}
@@ -242,7 +262,7 @@ def _html_body(body_text: str) -> str:
             out.append(f'<table style="border-collapse:collapse;font-size:14px;margin:12px 0">'
                        f"<tr>{cells}</tr>{body}</table>")
         else:
-            out.append(f'<p style="margin:0 0 12px">{escape(block)}</p>')
+            out.append(f'<p style="margin:0 0 12px">{escape(block).replace(chr(10), "<br>")}</p>')
     return ('<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;'
             f'line-height:1.5;color:#222">{"".join(out)}</div>')
 

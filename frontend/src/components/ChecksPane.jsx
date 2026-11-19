@@ -2,7 +2,7 @@ export default function ChecksPane({ decomposed }) {
   const { checks, unsupported } = decomposed
   return (
     <section className="pane">
-      <h2>2. Checks extracted</h2>
+      <div className="pane-head"><div><h2><span className="step">1</span>Checks extracted</h2><p className="pane-sub">What the agent understood the request to be asking for.</p></div></div>
       <div className="two-col">
         <div>
           <h3>Checks ({checks.length})</h3>

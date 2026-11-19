@@ -34,13 +34,44 @@ def sync_new_messages(candidates: list[dict]) -> None:
             cur.execute(
                 """INSERT INTO audit.inbox_runs
                    (message_id, thread_id, subject, from_address, received_at,
-                    status, is_audit_request, confidence)
-                   VALUES (%s, %s, %s, %s, %s, 'NEW', %s, %s)
+                    status, is_audit_request, confidence, snippet, has_pdf)
+                   VALUES (%s, %s, %s, %s, %s, 'NEW', %s, %s, %s, %s)
                    ON CONFLICT (message_id) DO NOTHING""",
                 (c["message_id"], c.get("thread_id"), c["subject"], c["from"], c["date"],
-                 is_audit_request, confidence),
+                 is_audit_request, confidence, c.get("snippet", ""), bool(c.get("has_pdf"))),
             )
         conn.commit()
+
+
+def known_ids() -> set:
+    with db.connect() as conn, conn.cursor() as cur:
+        cur.execute("SELECT message_id FROM audit.inbox_runs")
+        return {r["message_id"] for r in cur.fetchall()}
+
+
+def list_saved(own_address: str = "") -> list[dict]:
+    """The inbox as last synced, newest first, straight from the database --
+    no Gmail call. Mail sent from the connected mailbox itself is never listed.
+    Hides what the classifier is confident is not an audit request, but only
+    while untouched (a run that already happened must stay reachable)."""
+    with db.connect() as conn, conn.cursor() as cur:
+        cur.execute("SELECT * FROM audit.inbox_runs ORDER BY created_at DESC, message_id")
+        rows = cur.fetchall()
+    out = []
+    own = (own_address or "").lower()
+    for r in rows:
+        if own and own in (r["from_address"] or "").lower():
+            continue
+        if r["is_audit_request"] is False and r["status"] == "NEW":
+            continue
+        out.append({
+            "message_id": r["message_id"], "subject": r["subject"], "from": r["from_address"],
+            "date": r["received_at"], "snippet": r["snippet"] or "", "has_pdf": bool(r["has_pdf"]),
+            "status": r["status"], "is_audit_request": r["is_audit_request"],
+            "confidence": float(r["confidence"]) if r["confidence"] is not None else None,
+            "request_id": r["request_id"],
+        })
+    return out
 
 
 def _classify(subject: str, snippet: str) -> tuple:

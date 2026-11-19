@@ -49,7 +49,7 @@ export default function GapsPane({ requestId }) {
 
   return (
     <section className="pane">
-      <h2>4. Results by account</h2>
+      <div className="pane-head"><div><h2><span className="step">3</span>Results by account</h2><p className="pane-sub">One row per account and check. Click a row for the records behind it.</p></div></div>
       <div className="row">
         <select value={view} onChange={(e) => setView(e.target.value)}>
           {VIEWS.map((v) => <option key={v.key} value={v.key}>{v.label} ({count(v.key)})</option>)}
@@ -80,7 +80,7 @@ export default function GapsPane({ requestId }) {
                 <td>{r.account_id}</td>
                 <td>{r.check_name}</td>
                 <td>{r.channel_label || "-"}</td>
-                <td>{STATUS_LABEL[r.status] || r.status}</td>
+                <td><span className={`status status-${r.status.toLowerCase()}`}>{STATUS_LABEL[r.status] || r.status}</span></td>
                 <td>{r.headline}</td>
                 <td>{r.severity && <span className={`sev sev-${r.severity.toLowerCase()}`}>{r.severity}</span>}</td>
               </tr>
@@ -101,7 +101,7 @@ export default function GapsPane({ requestId }) {
 function Detail({ r }) {
   return (
     <div className="evidence">
-      <p><strong>{r.account_id}</strong> · {r.check_name}{r.channel_label ? ` · ${r.channel_label}` : ""} · <strong>{STATUS_LABEL[r.status] || r.status}</strong>
+      <p><strong>{r.account_id}</strong> · {r.check_name}{r.channel_label ? ` · ${r.channel_label}` : ""} · <span className={`status status-${r.status.toLowerCase()}`}>{STATUS_LABEL[r.status] || r.status}</span>
         {r.severity && <> · <span className={`sev sev-${r.severity.toLowerCase()}`}>{r.severity}</span></>}</p>
       <p>{r.summary}</p>
       {r.test && <p className="muted small"><em>Check:</em> {r.test}. <em>Period:</em> {r.period}.

@@ -25,7 +25,7 @@ export default function GuidelinePicker({ guidelines, picked, setPicked, disable
         const ok = items.filter((g) => g.testable === "Y")
         const all = ok.length > 0 && ok.every((g) => picked.includes(g.guideline_id))
         return (
-          <details key={cat} open style={{ marginTop: 6 }}>
+          <details key={cat} open className="guide-group">
             <summary>
               <strong>{cat}</strong>
               {ok.length > 0 && (

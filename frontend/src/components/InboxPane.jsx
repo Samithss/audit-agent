@@ -42,10 +42,10 @@ function MessageRow({ msg, running, onStarted, onView, onError }) {
   }
 
   return (
-    <div className="inbox-row">
+    <div className={`inbox-row ${open ? "open" : ""}`}>
       <div className="inbox-row-main" onClick={() => setOpen((v) => !v)}>
         <div>
-          <strong>{msg.subject}</strong>
+          <span className="inbox-subject">{msg.subject}</span>
           <p className="muted small">{msg.from} -- {msg.date}</p>
           <p className="muted small">{msg.snippet}</p>
           {msg.is_audit_request !== null && msg.is_audit_request !== undefined && (
@@ -80,13 +80,25 @@ function MessageRow({ msg, running, onStarted, onView, onError }) {
   )
 }
 
+const FILTERS = [
+  { key: "ALL", label: "All" },
+  { key: "NEW", label: "New" },
+  { key: "NEEDS_REVIEW", label: "Needs review" },
+  { key: "REPLIED", label: "Replied" },
+]
+
 export default function InboxPane({ running, onStarted, onView, onError }) {
   const [status, setStatus] = useState(null)
   const [messages, setMessages] = useState(null)
   const [loading, setLoading] = useState(false)
+  const [filter, setFilter] = useState("ALL")
 
+  // Opening the tab reads the saved list from the database -- no Gmail call.
   useEffect(() => {
-    api.inboxStatus().then(setStatus).catch((e) => onError(e.message))
+    api.inboxStatus().then((st) => {
+      setStatus(st)
+      if (st.connected) load(false)
+    }).catch((e) => onError(e.message))
   }, [])
 
   async function connect() {
@@ -98,10 +110,11 @@ export default function InboxPane({ running, onStarted, onView, onError }) {
     }
   }
 
-  async function refresh() {
+  // sync=false: saved list only. sync=true: also fetch mail not seen before.
+  async function load(sync) {
     setLoading(true)
     try {
-      setMessages(await api.inboxMessages())
+      setMessages(await api.inboxMessages(sync))
     } catch (e) {
       onError(e.message)
     } finally {
@@ -133,25 +146,42 @@ export default function InboxPane({ running, onStarted, onView, onError }) {
     )
   }
 
+  const shown = (messages || []).filter((m) => filter === "ALL" || m.status === filter)
+
   return (
     <section className="pane">
-      <h2>Gmail inbox</h2>
-      <div className="row">
-        <span className="badge success">Connected</span>
-        <button onClick={refresh} disabled={loading}>{loading ? "Loading..." : "Refresh inbox"}</button>
+      <div className="pane-head">
+        <div>
+          <h2>Gmail inbox</h2>
+          <p className="pane-sub">
+            Saved list -- only new mail is fetched when you check. Mail you sent is never listed. A new email that
+            names account ids starts processing by itself.
+          </p>
+        </div>
+        <button className="primary" onClick={() => load(true)} disabled={loading}>
+          {loading ? "Checking..." : "Check for new mail"}
+        </button>
       </div>
-      <p className="muted small">
-        Only emails Prism scores as likely audit requests show up here. A new one that names real account ids in
-        its body starts processing automatically on refresh -- no click needed; one that doesn't still waits for
-        you to attach a list.
-      </p>
+
+      <div className="inbox-toolbar">
+        <div className="filter-chips">
+          {FILTERS.map((f) => (
+            <button key={f.key} className={`filter-chip ${filter === f.key ? "active" : ""}`} onClick={() => setFilter(f.key)}>
+              {f.label}{messages ? ` (${f.key === "ALL" ? messages.length : messages.filter((m) => m.status === f.key).length})` : ""}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {messages === null ? (
-        <p className="muted">Click "Refresh inbox" to list candidate audit-request emails.</p>
-      ) : messages.length === 0 ? (
-        <p className="muted">No matching emails found.</p>
+        <p className="muted">Loading saved list...</p>
+      ) : shown.length === 0 ? (
+        <p className="muted">
+          {messages.length === 0 ? 'Nothing saved yet -- click "Check for new mail".' : "No emails in this view."}
+        </p>
       ) : (
         <div className="inbox-list">
-          {messages.map((m) => (
+          {shown.map((m) => (
             <MessageRow key={m.message_id} msg={m} running={running} onStarted={onStarted} onView={onView} onError={onError} />
           ))}
         </div>

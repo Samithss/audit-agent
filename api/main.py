@@ -32,7 +32,7 @@ Shared, once a job is started under some request_id:
                                                  reply_to / replied for Gmail-sourced runs)
   GET /api/requests/{id}/gaps                -- gap_items.csv, optionally filtered
   GET /api/requests/{id}/verdicts            -- one row per account x check, ?status= EVIDENCED|GAP|CANNOT_DETERMINE|NOT_APPLICABLE
-  GET /api/requests/{id}/download/{kind}     -- gap_report.xlsx / request_interpretation.md / letter docx
+  GET /api/requests/{id}/download/{kind}     -- gap_report.xlsx (full detail)
 
 A run is keyed by request_id, not a fresh job id -- out/<REQ>/ is already the
 one-slot-per-request-id layout run_checks.py/pack.py/letter.py use, so
@@ -53,7 +53,7 @@ import pandas as pd
 from agent import gmail_client, inbox_runs, run_results
 from agent.config import DATA_DIR, FRONTEND_URL, OUT_DIR
 from agent.decompose import decompose, decompose_from_guidelines
-from agent.letter import draft_and_validate, save_letter_docx
+from agent.letter import draft_and_validate
 from agent.pack import build_pack
 from agent.run_checks import run
 from agent.tools import Tools
@@ -154,12 +154,11 @@ def _execute(request_id: str, text: str, lender_id: str, period: dict | None, sa
 
         _append_log(request_id, "Drafting the response letter...")
         letter_result = draft_and_validate(request_id, decomposed_path, recipient_name=recipient_name)
-        letter_path = save_letter_docx(request_id, letter_result["text"])
 
         with _lock:
             _jobs[request_id]["result"] = dict(
                 request_id=request_id, decomposed=decomposed, pack_paths=pack_paths,
-                letter=letter_result, letter_path=str(letter_path),
+                letter=letter_result,
             )
         try:  # survives an API restart; never let a persistence hiccup fail the run
             run_results.save_letter(request_id, letter_result)
@@ -423,32 +422,20 @@ def _try_autostart(message_id: str, background_tasks: BackgroundTasks) -> bool:
 
 
 @app.get("/api/inbox/messages")
-def inbox_messages(background_tasks: BackgroundTasks):
+def inbox_messages(background_tasks: BackgroundTasks, sync: bool = False):
+    """sync=false (default): the list as saved in the database -- no Gmail call.
+    sync=true: look in Gmail for mail not seen before, save it, auto-start runs
+    for ones that name account ids, then return the saved list."""
     if not gmail_client.is_connected():
         raise HTTPException(409, "Gmail is not connected -- call /api/inbox/auth-url first")
-    candidates = gmail_client.list_candidate_messages()
-    inbox_runs.sync_new_messages(candidates)  # inserts a NEW row (+ Prism score) for anything not seen before
-    tracked = inbox_runs.list_statuses([c["message_id"] for c in candidates])
-    visible = []
-    for c in candidates:
-        row = tracked.get(c["message_id"], {})
-        is_audit = row.get("is_audit_request")
-        status = row.get("status", "NEW")
-        # Hide what Prism is confident isn't an audit request -- but ONLY while
-        # it's still untouched. Once a message has been run (deliberately, by a
-        # human overriding the score, or otherwise), hiding it would strand the
-        # result: no way to reach the draft, review it, or send the reply.
-        if is_audit is False and status == "NEW":
-            continue
-        c["status"] = status
-        c["is_audit_request"] = is_audit
-        c["confidence"] = row.get("confidence")
-        c["request_id"] = row.get("request_id")
-        if c["status"] == "NEW" and is_audit and _try_autostart(c["message_id"], background_tasks):
-            c["status"] = "PROCESSING"
-            c["request_id"] = f"GMAIL-{c['message_id']}"
-        visible.append(c)
-    return visible
+    if sync:
+        new = gmail_client.list_candidate_messages(skip_ids=inbox_runs.known_ids())
+        inbox_runs.sync_new_messages(new)
+        for c in new:
+            row = inbox_runs.list_statuses([c["message_id"]]).get(c["message_id"], {})
+            if row.get("is_audit_request"):
+                _try_autostart(c["message_id"], background_tasks)
+    return inbox_runs.list_saved(gmail_client.own_address())
 
 
 @app.post("/api/inbox/messages/{message_id}/run", status_code=202)
@@ -468,8 +455,7 @@ def send_reply(request_id: str, body: str = Form(...), attach: str | None = Form
     inbox message to reply into. Nothing else in this app calls this; it only
     runs when a human in the UI clicks Send.
 
-    attach: comma-separated keys from _DOWNLOAD_FILES (gap_report /
-    request_interpretation / letter) -- the same evidence-pack files the UI
+    attach: comma-separated keys from _DOWNLOAD_FILES (just gap_report) -- the same evidence-pack file the UI
     offers as downloads, attached to the reply. The human picks them; nothing
     is attached by default."""
     job = _job(request_id)
@@ -610,9 +596,6 @@ def account_results(request_id: str):
 _DOWNLOAD_FILES = {
     "gap_report": ("gap_report.xlsx",
                     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),
-    "request_interpretation": ("request_interpretation.md", "text/markdown"),
-    "letter": ("response_letter_DRAFT.docx",
-               "application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
 }
 
 

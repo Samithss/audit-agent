@@ -19,7 +19,7 @@ export const api = {
 
   inboxStatus: () => fetch(`${BASE}/inbox/status`).then(json),
   inboxAuthUrl: () => fetch(`${BASE}/inbox/auth-url`).then(json),
-  inboxMessages: () => fetch(`${BASE}/inbox/messages`).then(json),
+  inboxMessages: (sync = false) => fetch(`${BASE}/inbox/messages?sync=${sync}`).then(json),
   startInboxRun: (messageId, formData) =>
     fetch(`${BASE}/inbox/messages/${messageId}/run`, { method: "POST", body: formData }).then(json),
 

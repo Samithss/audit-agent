@@ -42,7 +42,7 @@ export default function UploadPane({ running, onStarted, onError }) {
 
   return (
     <section className="pane">
-      <h2>Upload your own request</h2>
+      <div className="pane-head"><div><h2>New audit request</h2><p className="pane-sub">Upload the request or paste its text, optionally add guidelines, and run.</p></div></div>
 
       <div className="field">
         <span>Request file</span>
@@ -61,7 +61,7 @@ export default function UploadPane({ running, onStarted, onError }) {
         )}
       </div>
 
-      <p className="muted small" style={{ textAlign: "center", margin: "6px 0" }}>— or —</p>
+      <div className="divider">or</div>
 
       <textarea
         className="paste-box"
