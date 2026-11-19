@@ -3,12 +3,30 @@ import { api } from "../api"
 import PeriodFields from "./PeriodFields"
 import AccountsField from "./AccountsField"
 
-function MessageRow({ msg, running, onStarted, onError }) {
+const STATUS_CHIP = {
+  NEW: { label: "New", cls: "chip-neutral" },
+  PROCESSING: { label: "Processing...", cls: "chip-processing" },
+  NEEDS_REVIEW: { label: "Needs review", cls: "chip-warning" },
+  ERROR: { label: "Error", cls: "chip-error" },
+  REPLIED: { label: "Replied", cls: "chip-success" },
+}
+
+function StatusChip({ status }) {
+  const chip = STATUS_CHIP[status] || STATUS_CHIP.NEW
+  return <span className={`chip ${chip.cls}`}>{chip.label}</span>
+}
+
+function MessageRow({ msg, running, onStarted, onView, onError }) {
   const [accountsFile, setAccountsFile] = useState(null)
   const [periodFrom, setPeriodFrom] = useState("")
   const [periodTo, setPeriodTo] = useState("")
   const [open, setOpen] = useState(false)
-  const canRun = accountsFile && !!periodFrom === !!periodTo
+  // No account list needed if the email body itself names real account ids --
+  // the backend falls back to scanning the text for them. Just keep the period
+  // fields paired (both or neither); let the server reject it if there's
+  // genuinely nothing to test against.
+  const canRun = !!periodFrom === !!periodTo
+  const alreadyRan = ["NEEDS_REVIEW", "ERROR", "REPLIED"].includes(msg.status)
 
   async function submit() {
     const fd = new FormData()
@@ -30,16 +48,31 @@ function MessageRow({ msg, running, onStarted, onError }) {
           <strong>{msg.subject}</strong>
           <p className="muted small">{msg.from} -- {msg.date}</p>
           <p className="muted small">{msg.snippet}</p>
+          {msg.is_audit_request !== null && msg.is_audit_request !== undefined && (
+            <p className="muted small">{Math.round(msg.confidence * 100)}% likely an audit request</p>
+          )}
         </div>
-        {msg.has_pdf && <span className="badge-pill">PDF attached</span>}
+        <div className="inbox-row-badges">
+          {msg.has_pdf && <span className="badge-pill">PDF attached</span>}
+          <StatusChip status={msg.status} />
+        </div>
       </div>
       {open && (
         <div className="inbox-row-run">
+          {alreadyRan && msg.request_id && (
+            <button onClick={() => onView(msg.request_id)} style={{ marginBottom: 10 }}>
+              {msg.status === "ERROR" ? "View error log" : "View result"}
+            </button>
+          )}
+          <p className="muted small">
+            Optional -- leave blank if the email itself names the account ids (e.g. ACC100001); only attach a
+            list to test a different set.
+          </p>
           <AccountsField file={accountsFile} setFile={setAccountsFile} disabled={running} />
           <PeriodFields
         periodFrom={periodFrom} setPeriodFrom={setPeriodFrom} periodTo={periodTo} setPeriodTo={setPeriodTo} />
           <button className="primary" onClick={submit} disabled={!canRun || running}>
-            {running ? "Running..." : "Run agent on this email"}
+            {running ? "Running..." : alreadyRan ? "Run again" : "Run agent on this email"}
           </button>
         </div>
       )}
@@ -47,7 +80,7 @@ function MessageRow({ msg, running, onStarted, onError }) {
   )
 }
 
-export default function InboxPane({ running, onStarted, onError }) {
+export default function InboxPane({ running, onStarted, onView, onError }) {
   const [status, setStatus] = useState(null)
   const [messages, setMessages] = useState(null)
   const [loading, setLoading] = useState(false)
@@ -107,6 +140,11 @@ export default function InboxPane({ running, onStarted, onError }) {
         <span className="badge success">Connected</span>
         <button onClick={refresh} disabled={loading}>{loading ? "Loading..." : "Refresh inbox"}</button>
       </div>
+      <p className="muted small">
+        Only emails Prism scores as likely audit requests show up here. A new one that names real account ids in
+        its body starts processing automatically on refresh -- no click needed; one that doesn't still waits for
+        you to attach a list.
+      </p>
       {messages === null ? (
         <p className="muted">Click "Refresh inbox" to list candidate audit-request emails.</p>
       ) : messages.length === 0 ? (
@@ -114,7 +152,7 @@ export default function InboxPane({ running, onStarted, onError }) {
       ) : (
         <div className="inbox-list">
           {messages.map((m) => (
-            <MessageRow key={m.message_id} msg={m} running={running} onStarted={onStarted} onError={onError} />
+            <MessageRow key={m.message_id} msg={m} running={running} onStarted={onStarted} onView={onView} onError={onError} />
           ))}
         </div>
       )}

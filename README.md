@@ -166,7 +166,12 @@ scripted for you:
 8. Click **Refresh inbox** to list candidate emails (matches
    `GMAIL_SEARCH_QUERY`, default: subject contains audit/compliance/annexure
    within the last 180 days), pick one, choose which lender's sample to test
-   against, and run the agent.
+   against, and run the agent. Each email gets a status chip (New ->
+   Processing -> Needs review -> Replied, or Error) that persists across
+   refreshes -- an email you've already run or replied to no longer looks
+   identical to one you haven't. A newly-seen email also gets a one-time
+   Prism confidence caption ("82% likely an audit request") -- informational
+   only, it never hides or filters anything.
 9. Once the run finishes, a **Send reply** section appears showing the
    original sender's address and the drafted letter, editable. Nothing is
    ever sent automatically -- you review (and can edit) the text, then click
@@ -209,6 +214,8 @@ reference; the primary UI is now the one in step 4.
 docker-compose.yml             Postgres 16 (port 55433 -- picked to avoid colliding with other local containers)
 sql/001_schema.sql             audit schema: 10 source-mirror tables + 4 generated-data tables (runs/verdicts/gap_items/transcript_labels)
 sql/002_gmail.sql              audit.oauth_tokens: one row per provider, holds the Gmail refresh token
+sql/005_inbox_runs.sql         audit.inbox_runs: persistent NEW/PROCESSING/NEEDS_REVIEW/ERROR/REPLIED status per Gmail message
+agent/inbox_runs.py            Step 11: Gmail inbox status lifecycle + one-time Prism classification per message
 scripts/load_to_postgres.py    idempotent CSV -> Postgres loader
 config/source_registry.yaml    sources, keys, and the time zone of every timestamp (D4 = IST; D5, D10 = UTC)
 agent/db.py                    psycopg connection helper

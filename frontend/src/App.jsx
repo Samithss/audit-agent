@@ -91,6 +91,26 @@ export default function App() {
     setRun({ status: "running", log: [], error: null })
   }
 
+  // Jump straight to an already-finished (or still-running) Gmail run instead
+  // of starting a new one -- used when clicking a NEEDS_REVIEW/REPLIED/ERROR
+  // row in the inbox list.
+  async function onViewExisting(requestId) {
+    setLoadError("")
+    setResult(null)
+    setGaps([])
+    setActiveRequestId(requestId)
+    try {
+      const s = await api.getStatus(requestId)
+      setRun(s)
+      // Try the result regardless of the in-process status: after an API
+      // restart the job is "idle" in memory, but /result rebuilds it from
+      // disk + audit.run_results. Only a still-running job has nothing yet.
+      if (s.status !== "running") loadResult(requestId)
+    } catch (e) {
+      setLoadError(e.message)
+    }
+  }
+
   useEffect(() => {
     if (run.status !== "running" || !activeRequestId) return
     const t = setInterval(async () => {
@@ -136,7 +156,7 @@ export default function App() {
         <UploadPane running={running} onStarted={onRunStarted} onError={setLoadError} />
       )}
       {mode === "inbox" && (
-        <InboxPane running={running} onStarted={onRunStarted} onError={setLoadError} />
+        <InboxPane running={running} onStarted={onRunStarted} onView={onViewExisting} onError={setLoadError} />
       )}
 
       <RunLog log={run.log} status={run.status} error={run.error} />

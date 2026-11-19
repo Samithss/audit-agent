@@ -18,6 +18,10 @@ compliance team to a lender who sent an audit request, based ONLY on the JSON
 summary you are given -- never invent a fact not present in it.
 
 Rules:
+- Open with "Dear <recipient_name>," when the summary has a recipient_name, otherwise
+  "Dear Sir/Madam,". NEVER address the reader by an internal code like "Lender L001" --
+  that is a database id, not a name. Refer to the lender id only as a reference
+  (e.g. "your audit request for portfolio L001"), never in the salutation.
 - State plainly the audit period, how many accounts were checked, how many checks
   were run, and how many accounts had at least one gap.
 - Do NOT list per-check counts or severities in prose. The system inserts a results
@@ -42,7 +46,7 @@ Rules:
 - Plain prose paragraphs, no markdown, no bullet symbols -- this is a formal letter."""
 
 
-def _summary_for_letter(request_id: str, decomposed_path, out_dir=OUT_DIR) -> dict:
+def _summary_for_letter(request_id: str, decomposed_path, out_dir=OUT_DIR, recipient_name: str | None = None) -> dict:
     """Everything here is counted in ONE unit -- accounts, using verdicts.csv's
     own status/severity columns (severity is already the account-level worst
     severity computed by severity.worst() in run_checks.py). gap_items.csv is
@@ -72,6 +76,9 @@ def _summary_for_letter(request_id: str, decomposed_path, out_dir=OUT_DIR) -> di
         r["check_label"] = labels.get(r["check_id"], r["check_type"])
 
     return {
+        # Who the reply is actually going to, when we know (a Gmail-sourced run
+        # knows the real sender). None for sample/upload runs -> "Dear Sir/Madam".
+        "recipient_name": recipient_name,
         "lender_id": spec["lender_id"],
         "period": spec["period"],
         "accounts_sampled": int(verdicts.account_id.nunique()),
@@ -128,11 +135,12 @@ def _ask_model(summary: dict, retry_reasons=None) -> str:
     return text.strip()
 
 
-def draft_and_validate(request_id: str, decomposed_path, out_dir=OUT_DIR) -> dict:
+def draft_and_validate(request_id: str, decomposed_path, out_dir=OUT_DIR,
+                       recipient_name: str | None = None) -> dict:
     """Draft -> validate -> retry once with the failure reasons -> if still
     failing, return it anyway but flagged needs_human_review. Never ships a
     letter that passed on the first try without being checked."""
-    summary = _summary_for_letter(request_id, decomposed_path, out_dir)
+    summary = _summary_for_letter(request_id, decomposed_path, out_dir, recipient_name)
 
     text = _ask_model(summary)
     result = validate(text, summary)
@@ -149,16 +157,31 @@ def draft_and_validate(request_id: str, decomposed_path, out_dir=OUT_DIR) -> dic
     }
 
 
-def save_letter_docx(request_id: str, text: str, out_dir=OUT_DIR) -> Path:
-    doc = Document()
-    doc.add_heading(f"Response to audit request -- {request_id}", level=1)
+def iter_blocks(text: str):
+    """Split a drafted letter into ("para", str) and ("table", rows) blocks.
+
+    The letter carries its results table as a plain-text pipe table (built in
+    code by _results_table, never by the model). Every renderer -- Word here,
+    HTML email in gmail_client.send_reply -- needs the same parse, so it lives
+    in one place: a block of lines that all start with "|" is the table, and
+    the |---|---| separator row is dropped."""
     for para in text.split("\n\n"):
         if not para.strip():
             continue
-        lines = [l for l in para.strip().split("\n")]
-        if all(l.startswith("|") for l in lines):  # the results table -> a real Word table
-            cells = [[c.strip() for c in l.strip().strip("|").split("|")]
-                     for l in lines if not set(l) <= set("|- ")]
+        lines = para.strip().split("\n")
+        if all(l.startswith("|") for l in lines):
+            yield "table", [[c.strip() for c in l.strip().strip("|").split("|")]
+                            for l in lines if not set(l) <= set("|- ")]
+        else:
+            yield "para", para.strip()
+
+
+def save_letter_docx(request_id: str, text: str, out_dir=OUT_DIR) -> Path:
+    doc = Document()
+    doc.add_heading(f"Response to audit request -- {request_id}", level=1)
+    for kind, block in iter_blocks(text):
+        if kind == "table":
+            cells = block
             t = doc.add_table(rows=len(cells), cols=len(cells[0]))
             t.style = "Table Grid"
             for i, row in enumerate(cells):
@@ -168,7 +191,7 @@ def save_letter_docx(request_id: str, text: str, out_dir=OUT_DIR) -> Path:
                         for r in t.cell(i, j).paragraphs[0].runs:
                             r.bold = True
         else:
-            doc.add_paragraph(para.strip())
+            doc.add_paragraph(block)
     od = Path(out_dir) / request_id
     od.mkdir(parents=True, exist_ok=True)
     path = od / "response_letter_DRAFT.docx"

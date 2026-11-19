@@ -166,12 +166,116 @@ mind. Two explicit pivots since:
   against the real Gmail API client library but could not be exercised
   end-to-end without a real Google OAuth client and a human consent grant.
 
+## Step 11 -- Gmail inbox: persistent status, not just a live search
+
+Previously, "Refresh inbox" re-ran the Gmail search fresh every time -- an
+email already run, or already replied to, looked identical to one never
+touched. `agent/inbox_runs.py` + `audit.inbox_runs` (`sql/005_inbox_runs.sql`)
+fix that with one lifecycle per message:
+
+```
+NEW -> PROCESSING -> NEEDS_REVIEW -> REPLIED
+                  \-> ERROR
+```
+
+- `GET /api/inbox/messages` now inserts a `NEW` row (with a Prism confidence
+  score) for anything not seen before, and returns the persisted status for
+  anything already tracked -- `sync_new_messages()` never re-classifies or
+  duplicates a row on a later refresh (verified against the real connected
+  mailbox: `created_at == updated_at` held after a second refresh).
+- The Prism call (`sarvam-prism` / `/v2/systemone`) had never actually been
+  exercised before this -- its request shape was discovered by iterating on
+  real 422 errors from the live API, not guessed: a question needs
+  `{"type": "noul", "instructions": "..."}`, returning a 0-1 probability
+  under `answers.<key>.noul`. Confidence is purely informational -- it's
+  shown as a caption in the UI, never filters or hides a message. Verified
+  live: a real audit-request email scored 71.8%, an unrelated email scored
+  3.3%, and on the actual connected mailbox, a GitHub notification whose repo
+  name happens to contain "audit" (matching the coarse keyword search) was
+  correctly scored 3.3% likely to be real.
+- `start_inbox_run` flips to `PROCESSING`; `_execute()`'s existing
+  success/error branches flip to `NEEDS_REVIEW`/`ERROR` (one `if
+  request_id.startswith("GMAIL-")` each, no new parameters threaded through
+  the generic pipeline function); `/send-reply` flips to `REPLIED`.
+- UI: each inbox row now shows a status chip and the confidence caption;
+  clicking a `NEEDS_REVIEW`/`ERROR`/`REPLIED` row jumps straight to that run's
+  result instead of needing to remember which account list/dates were used.
+- **Revised after the first live test**: the user explicitly asked for two
+  changes to the original manual-only design, after seeing it in practice --
+  (1) hide emails Prism scores as not a real audit request, rather than just
+  captioning them, and (2) auto-start a run with no click at all when a `NEW`
+  email is classified `is_audit_request=True`. Both are now built, with one
+  guardrail kept: auto-start only fires when the email body itself names real
+  account ids (`\bACC\d+\b`) -- there's no human in that path to attach an
+  account list, so a qualifying email with no inline ids still waits for a
+  manual click. Verified against the real connected mailbox: a genuine audit
+  request (confidence 85%) auto-started on refresh with zero clicks and
+  produced a correct result (4/4 accounts flagged for a real seeded
+  WhatsApp-consent gap, CRITICAL); an unrelated GitHub notification
+  (confidence 3%) no longer appears in the list at all.
+- Also fixed in the same pass: the "Run agent on this email" button
+  previously *required* an attached account-list file even though the
+  backend already extracts account ids straight from the email body --
+  real frontend/backend mismatch, not user error. `canRun` no longer
+  requires a file.
+
+## Parallel work landed from likhithg-png/audit-agent (synced into this branch)
+
+likhith's team (with their own Claude Code session) independently built
+almost exactly the RBI-guideline-driven check expansion discussed in this
+session: a guideline catalogue (`audit.guidelines`, 16 entries, each labeled
+`RBI_VERIFIED`/`LENDER_POLICY`/`UNVERIFIED` with its source) and 6 new check
+types -- `CALLER_NUMBER_SERIES`, `MESSAGE_CONTENT`, `CALL_CONDUCT`,
+`FIELD_VISIT`, `SECURITY_RELEASE`, `PENAL_CHARGES` -- with real synthetic
+data and ground truth. Notably, the harassment/abusive-language check
+(`CALL_CONDUCT`) was built as deterministic regex + a QA-logged conduct
+table rather than an LLM call, more consistent with this project's actual
+"deterministic code decides verdicts" design than the LLM-based version
+proposed earlier in this session. Rebased cleanly; all data loaded into
+Postgres; verified one new check live end-to-end (real seeded harassment
+language caught with correct citations). Not yet done: these 6 checks aren't
+wired into `eval/score.py`'s recall/false-gap-rate scoring yet, and the
+`DND_COMPLIANCE`/agent-background-verification checks discussed earlier in
+this session still aren't built.
+
+## Step 12 -- attachments, and making a finished run survive a restart
+
+Three things came out of the first real round-trip through a live mailbox:
+
+- **Attachments.** The reply carried only prose; the evidence pack was
+  download-only in the UI. `send_reply` now takes an `attachments` list and
+  nests the `multipart/alternative` body inside a `multipart/mixed`, and
+  `ReplyPane` offers the same three files the Downloads row does
+  (gap_report.xlsx / request_interpretation.md / response_letter_DRAFT.docx).
+  Nothing is attached unless a human ticks it, and the confirm dialog says how
+  many are going.
+- **A finished run no longer dies with the process** (`sql/006_run_results.sql`
+  + `agent/run_results.py`). The drafted letter and the reply metadata were the
+  only things living purely in `_jobs`; everything else `/result` returns was
+  already on disk. That meant a Gmail message sitting at `NEEDS_REVIEW` became
+  permanently unreachable the moment uvicorn reloaded -- the status row said "a
+  human still needs to review this" while the draft it pointed at was gone, so
+  the reply could never be sent. In production that would strand pending work
+  on every deploy. Both are now persisted, `/result` falls back to disk + DB,
+  and `/send-reply` reads the recipient from the DB when memory is empty.
+  Verified by running a real Gmail message, restarting the API, and confirming
+  the draft, recipient and all result panes still render.
+- **Two bugs found in the previous commit's own code**, both via the live
+  test: (1) the "hide non-audit emails" filter hid messages that had *already
+  been processed*, stranding a `NEEDS_REVIEW` run where no human could reach
+  it -- the filter now only applies while a message is still `NEW`; (2)
+  `onViewExisting` only loaded a result when the in-memory status said
+  `"done"`, so after a restart ("idle") it silently rendered nothing.
+
 ## Known caveats
 
-- The FastAPI job store (`_jobs` in `api/main.py`) is in-process memory -- a
-  restart loses in-flight run status (not run *data*; `out/<REQ>/` and
-  Postgres already hold that). Fine for one backend process; would need a
-  shared store (Postgres row, Redis) behind more than one worker.
+- The FastAPI job store (`_jobs` in `api/main.py`) is still in-process memory,
+  but no longer load-bearing. A restart loses the live step-by-step *log* of a
+  run; it no longer loses the run itself -- `audit.run_results` persists the
+  drafted letter and reply metadata, and `/result` rebuilds everything else
+  from `out/<request_id>/`. Still single-process: a run genuinely in flight
+  when the process dies is not resumed, and more than one worker would need a
+  shared store for the live status.
 - `letter.draft_and_validate()` can still return `needs_human_review: true`
   on either draft attempt -- this is by design (validator catches it, UI
   surfaces it), not a bug, but it means a run isn't guaranteed a clean letter

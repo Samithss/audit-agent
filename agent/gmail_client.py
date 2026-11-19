@@ -19,7 +19,13 @@ single message a human explicitly clicks "run" on.
 """
 import base64
 import email
+import mimetypes
+from email import encoders
+from email.mime.base import MIMEBase
+from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from email.utils import parseaddr
+from pathlib import Path
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -48,17 +54,32 @@ def is_configured() -> bool:
     return bool(GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET)
 
 
+# google-auth-oauthlib 1.x auto-generates a PKCE code_verifier on
+# authorization_url() (autogenerate_code_verifier=True by default) and embeds
+# its code_challenge in the URL Google redirects the user to. The callback
+# comes back as a SEPARATE HTTP request/Flow instance, so that code_verifier
+# has to be carried across the redirect ourselves or Google's token endpoint
+# rejects the exchange with "invalid_grant: Missing code verifier" -- keyed
+# by the OAuth `state` param, which Google echoes back verbatim. In-memory is
+# fine here: single process, single operator, and an entry only needs to
+# survive the few seconds of the redirect round-trip.
+_pending_pkce = {}
+
+
 def build_auth_url() -> str:
     flow = Flow.from_client_config(_client_config(), scopes=SCOPES, redirect_uri=GOOGLE_REDIRECT_URI)
-    url, _state = flow.authorization_url(access_type="offline", prompt="consent", include_granted_scopes="true")
+    url, state = flow.authorization_url(access_type="offline", prompt="consent", include_granted_scopes="true")
+    _pending_pkce[state] = flow.code_verifier
     return url
 
 
-def exchange_code(code: str) -> None:
-    """Called from the OAuth callback with Google's one-time code. Stores the
-    refresh token -- this is the ONLY place a token is written from a fresh
-    grant; every later use just refreshes it in place."""
+def exchange_code(code: str, state: str = None) -> None:
+    """Called from the OAuth callback with Google's one-time code (+ the
+    state it was issued under). Stores the refresh token -- this is the ONLY
+    place a token is written from a fresh grant; every later use just
+    refreshes it in place."""
     flow = Flow.from_client_config(_client_config(), scopes=SCOPES, redirect_uri=GOOGLE_REDIRECT_URI)
+    flow.code_verifier = _pending_pkce.pop(state, None)
     flow.fetch_token(code=code)
     creds = flow.credentials
     with db.connect() as conn, conn.cursor() as cur:
@@ -156,8 +177,11 @@ def get_message_meta(message_id: str) -> dict:
     msg = svc.users().messages().get(userId="me", id=message_id, format="metadata",
                                      metadataHeaders=["Subject", "From", "Message-Id", "Message-ID"]).execute()
     headers = {h["name"]: h["value"] for h in msg["payload"].get("headers", [])}
+    sender = headers.get("From", "")
+    name, addr = parseaddr(sender)       # "Likhith Gowda <x@y>" -> ("Likhith Gowda", "x@y")
     return {
-        "from": headers.get("From", ""),
+        "from": sender,
+        "from_name": name or (addr.split("@")[0] if addr else ""),
         "subject": headers.get("Subject", "(no subject)"),
         "message_id_header": headers.get("Message-Id") or headers.get("Message-ID", ""),
         "thread_id": msg.get("threadId"),
@@ -193,14 +217,69 @@ def get_message_text(message_id: str) -> str:
     raise ValueError(f"message {message_id} has neither a PDF attachment nor a text body")
 
 
-def send_reply(to: str, subject: str, body_text: str, thread_id: str = None, in_reply_to: str = None) -> str:
+def _html_body(body_text: str) -> str:
+    """The letter's results table is a plain-text pipe table, which only lines
+    up in a monospace font -- most mail clients use a proportional one, so it
+    arrives as ragged garbage. Send multipart/alternative and give the HTML
+    part a real <table>; clients that only do plain text still get the
+    original text unchanged."""
+    from html import escape
+
+    from .letter import iter_blocks
+
+    out = []
+    for kind, block in iter_blocks(body_text):
+        if kind == "table":
+            head, *rows = block
+            cells = "".join(
+                f'<th align="left" style="padding:6px 10px;border:1px solid #ccc;'
+                f'background:#f4f4f4">{escape(c)}</th>' for c in head)
+            body = "".join(
+                "<tr>" + "".join(
+                    f'<td style="padding:6px 10px;border:1px solid #ccc">{escape(c)}</td>'
+                    for c in r) + "</tr>"
+                for r in rows)
+            out.append(f'<table style="border-collapse:collapse;font-size:14px;margin:12px 0">'
+                       f"<tr>{cells}</tr>{body}</table>")
+        else:
+            out.append(f'<p style="margin:0 0 12px">{escape(block)}</p>')
+    return ('<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;'
+            f'line-height:1.5;color:#222">{"".join(out)}</div>')
+
+
+def send_reply(to: str, subject: str, body_text: str, thread_id: str = None, in_reply_to: str = None,
+               attachments: list | None = None) -> str:
     """Sends ONE email. Called only from api/main.py's /send-reply endpoint,
     which only runs when a human clicks Send in the UI -- there is no
     scheduler, webhook, or automatic trigger anywhere that calls this. Threads
     the reply into the original conversation when thread_id/in_reply_to are
     given (both come from get_message_meta() on the real inbound message,
-    never from client-supplied values)."""
-    msg = MIMEText(body_text)
+    never from client-supplied values).
+
+    attachments: list of Path. The body is always multipart/alternative
+    (plain + HTML); with attachments that gets nested inside a
+    multipart/mixed, which is the shape mail clients expect."""
+    alt = MIMEMultipart("alternative")
+    alt.attach(MIMEText(body_text, "plain"))
+    alt.attach(MIMEText(_html_body(body_text), "html"))
+
+    if attachments:
+        msg = MIMEMultipart("mixed")
+        msg.attach(alt)
+        for path in attachments:
+            path = Path(path)
+            if not path.exists():
+                continue
+            ctype, _ = mimetypes.guess_type(path.name)
+            maintype, _, subtype = (ctype or "application/octet-stream").partition("/")
+            part = MIMEBase(maintype, subtype)
+            part.set_payload(path.read_bytes())
+            encoders.encode_base64(part)
+            part.add_header("Content-Disposition", "attachment", filename=path.name)
+            msg.attach(part)
+    else:
+        msg = alt
+
     msg["to"] = to
     msg["subject"] = subject if subject.lower().startswith("re:") else f"Re: {subject}"
     if in_reply_to:

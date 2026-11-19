@@ -37,9 +37,10 @@ export const api = {
     fetch(`${BASE}/requests/${id}/verdicts?status=${encodeURIComponent(status)}`).then(json),
   downloadUrl: (id, kind) => `${BASE}/requests/${id}/download/${kind}`,
 
-  sendReply: (id, body) => {
+  sendReply: (id, body, attach = []) => {
     const fd = new FormData()
     fd.set("body", body)
+    if (attach.length) fd.set("attach", attach.join(","))
     return fetch(`${BASE}/requests/${id}/send-reply`, { method: "POST", body: fd }).then(json)
   },
 }
