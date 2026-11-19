@@ -3,12 +3,26 @@ import { api } from "../api"
 import PeriodFields from "./PeriodFields"
 import AccountsField from "./AccountsField"
 
-function MessageRow({ msg, running, onStarted, onError }) {
+const STATUS_CHIP = {
+  NEW: { label: "New", cls: "chip-neutral" },
+  PROCESSING: { label: "Processing...", cls: "chip-processing" },
+  NEEDS_REVIEW: { label: "Needs review", cls: "chip-warning" },
+  ERROR: { label: "Error", cls: "chip-error" },
+  REPLIED: { label: "Replied", cls: "chip-success" },
+}
+
+function StatusChip({ status }) {
+  const chip = STATUS_CHIP[status] || STATUS_CHIP.NEW
+  return <span className={`chip ${chip.cls}`}>{chip.label}</span>
+}
+
+function MessageRow({ msg, running, onStarted, onView, onError }) {
   const [accountsFile, setAccountsFile] = useState(null)
   const [periodFrom, setPeriodFrom] = useState("")
   const [periodTo, setPeriodTo] = useState("")
   const [open, setOpen] = useState(false)
   const canRun = accountsFile && !!periodFrom === !!periodTo
+  const alreadyRan = ["NEEDS_REVIEW", "ERROR", "REPLIED"].includes(msg.status)
 
   async function submit() {
     const fd = new FormData()
@@ -30,16 +44,27 @@ function MessageRow({ msg, running, onStarted, onError }) {
           <strong>{msg.subject}</strong>
           <p className="muted small">{msg.from} -- {msg.date}</p>
           <p className="muted small">{msg.snippet}</p>
+          {msg.is_audit_request !== null && msg.is_audit_request !== undefined && (
+            <p className="muted small">{Math.round(msg.confidence * 100)}% likely an audit request</p>
+          )}
         </div>
-        {msg.has_pdf && <span className="badge-pill">PDF attached</span>}
+        <div className="inbox-row-badges">
+          {msg.has_pdf && <span className="badge-pill">PDF attached</span>}
+          <StatusChip status={msg.status} />
+        </div>
       </div>
       {open && (
         <div className="inbox-row-run">
+          {alreadyRan && msg.request_id && (
+            <button onClick={() => onView(msg.request_id)} style={{ marginBottom: 10 }}>
+              {msg.status === "ERROR" ? "View error log" : "View result"}
+            </button>
+          )}
           <AccountsField file={accountsFile} setFile={setAccountsFile} disabled={running} />
           <PeriodFields
         periodFrom={periodFrom} setPeriodFrom={setPeriodFrom} periodTo={periodTo} setPeriodTo={setPeriodTo} />
           <button className="primary" onClick={submit} disabled={!canRun || running}>
-            {running ? "Running..." : "Run agent on this email"}
+            {running ? "Running..." : alreadyRan ? "Run again" : "Run agent on this email"}
           </button>
         </div>
       )}
@@ -47,7 +72,7 @@ function MessageRow({ msg, running, onStarted, onError }) {
   )
 }
 
-export default function InboxPane({ running, onStarted, onError }) {
+export default function InboxPane({ running, onStarted, onView, onError }) {
   const [status, setStatus] = useState(null)
   const [messages, setMessages] = useState(null)
   const [loading, setLoading] = useState(false)
@@ -114,7 +139,7 @@ export default function InboxPane({ running, onStarted, onError }) {
       ) : (
         <div className="inbox-list">
           {messages.map((m) => (
-            <MessageRow key={m.message_id} msg={m} running={running} onStarted={onStarted} onError={onError} />
+            <MessageRow key={m.message_id} msg={m} running={running} onStarted={onStarted} onView={onView} onError={onError} />
           ))}
         </div>
       )}

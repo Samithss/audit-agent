@@ -166,6 +166,62 @@ mind. Two explicit pivots since:
   against the real Gmail API client library but could not be exercised
   end-to-end without a real Google OAuth client and a human consent grant.
 
+## Step 11 -- Gmail inbox: persistent status, not just a live search
+
+Previously, "Refresh inbox" re-ran the Gmail search fresh every time -- an
+email already run, or already replied to, looked identical to one never
+touched. `agent/inbox_runs.py` + `audit.inbox_runs` (`sql/005_inbox_runs.sql`)
+fix that with one lifecycle per message:
+
+```
+NEW -> PROCESSING -> NEEDS_REVIEW -> REPLIED
+                  \-> ERROR
+```
+
+- `GET /api/inbox/messages` now inserts a `NEW` row (with a Prism confidence
+  score) for anything not seen before, and returns the persisted status for
+  anything already tracked -- `sync_new_messages()` never re-classifies or
+  duplicates a row on a later refresh (verified against the real connected
+  mailbox: `created_at == updated_at` held after a second refresh).
+- The Prism call (`sarvam-prism` / `/v2/systemone`) had never actually been
+  exercised before this -- its request shape was discovered by iterating on
+  real 422 errors from the live API, not guessed: a question needs
+  `{"type": "noul", "instructions": "..."}`, returning a 0-1 probability
+  under `answers.<key>.noul`. Confidence is purely informational -- it's
+  shown as a caption in the UI, never filters or hides a message. Verified
+  live: a real audit-request email scored 71.8%, an unrelated email scored
+  3.3%, and on the actual connected mailbox, a GitHub notification whose repo
+  name happens to contain "audit" (matching the coarse keyword search) was
+  correctly scored 3.3% likely to be real.
+- `start_inbox_run` flips to `PROCESSING`; `_execute()`'s existing
+  success/error branches flip to `NEEDS_REVIEW`/`ERROR` (one `if
+  request_id.startswith("GMAIL-")` each, no new parameters threaded through
+  the generic pipeline function); `/send-reply` flips to `REPLIED`.
+- UI: each inbox row now shows a status chip and the confidence caption;
+  clicking a `NEEDS_REVIEW`/`ERROR`/`REPLIED` row jumps straight to that run's
+  result instead of needing to remember which account list/dates were used.
+- Still manual-start, per the earlier decision: reaching `NEW` never
+  auto-triggers a run. A human still clicks "Run agent on this email."
+
+## Parallel work landed from likhithg-png/audit-agent (synced into this branch)
+
+likhith's team (with their own Claude Code session) independently built
+almost exactly the RBI-guideline-driven check expansion discussed in this
+session: a guideline catalogue (`audit.guidelines`, 16 entries, each labeled
+`RBI_VERIFIED`/`LENDER_POLICY`/`UNVERIFIED` with its source) and 6 new check
+types -- `CALLER_NUMBER_SERIES`, `MESSAGE_CONTENT`, `CALL_CONDUCT`,
+`FIELD_VISIT`, `SECURITY_RELEASE`, `PENAL_CHARGES` -- with real synthetic
+data and ground truth. Notably, the harassment/abusive-language check
+(`CALL_CONDUCT`) was built as deterministic regex + a QA-logged conduct
+table rather than an LLM call, more consistent with this project's actual
+"deterministic code decides verdicts" design than the LLM-based version
+proposed earlier in this session. Rebased cleanly; all data loaded into
+Postgres; verified one new check live end-to-end (real seeded harassment
+language caught with correct citations). Not yet done: these 6 checks aren't
+wired into `eval/score.py`'s recall/false-gap-rate scoring yet, and the
+`DND_COMPLIANCE`/agent-background-verification checks discussed earlier in
+this session still aren't built.
+
 ## Known caveats
 
 - The FastAPI job store (`_jobs` in `api/main.py`) is in-process memory -- a

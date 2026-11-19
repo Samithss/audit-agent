@@ -50,7 +50,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, RedirectResponse
 import pandas as pd
 
-from agent import gmail_client
+from agent import gmail_client, inbox_runs
 from agent.config import DATA_DIR, FRONTEND_URL, OUT_DIR
 from agent.decompose import decompose, decompose_from_guidelines
 from agent.letter import draft_and_validate, save_letter_docx
@@ -163,9 +163,13 @@ def _execute(request_id: str, text: str, lender_id: str, period: dict | None, sa
             )
         _append_log(request_id, "Done")
         _set(request_id, status="done")
+        if request_id.startswith("GMAIL-"):
+            inbox_runs.mark_needs_review(request_id.removeprefix("GMAIL-"))
     except Exception as e:
         _set(request_id, status="error", error=str(e))
         _append_log(request_id, f"Error: {e}")
+        if request_id.startswith("GMAIL-"):
+            inbox_runs.mark_error(request_id.removeprefix("GMAIL-"), str(e))
 
 
 def _resolve_sample(request_id: str, lender_id: str | None, annexure_bytes: bytes | None, annexure_name: str | None,
@@ -376,7 +380,16 @@ def inbox_oauth_callback(code: str | None = None, state: str | None = None, erro
 def inbox_messages():
     if not gmail_client.is_connected():
         raise HTTPException(409, "Gmail is not connected -- call /api/inbox/auth-url first")
-    return gmail_client.list_candidate_messages()
+    candidates = gmail_client.list_candidate_messages()
+    inbox_runs.sync_new_messages(candidates)  # inserts a NEW row (+ Prism score) for anything not seen before
+    tracked = inbox_runs.list_statuses([c["message_id"] for c in candidates])
+    for c in candidates:
+        row = tracked.get(c["message_id"], {})
+        c["status"] = row.get("status", "NEW")
+        c["is_audit_request"] = row.get("is_audit_request")
+        c["confidence"] = row.get("confidence")
+        c["request_id"] = row.get("request_id")
+    return candidates
 
 
 @app.post("/api/inbox/messages/{message_id}/run", status_code=202)
@@ -394,6 +407,7 @@ async def start_inbox_run(message_id: str, background_tasks: BackgroundTasks,
            period=_period_arg(period_from, period_to), sample_file=sample_file,
            source=f"gmail:{message_id}")
     _set(request_id, reply_meta=reply_meta, replied=False)
+    inbox_runs.mark_processing(message_id, request_id)
     return {"request_id": request_id, "status": "running"}
 
 
@@ -410,12 +424,14 @@ def send_reply(request_id: str, body: str = Form(...)):
     if job.get("replied"):
         raise HTTPException(409, "a reply has already been sent for this request")
 
-    message_id = gmail_client.send_reply(
+    sent_message_id = gmail_client.send_reply(
         to=reply_meta["from"], subject=reply_meta["subject"], body_text=body,
         thread_id=reply_meta.get("thread_id"), in_reply_to=reply_meta.get("message_id_header"),
     )
     _set(request_id, replied=True)
-    return {"sent": True, "to": reply_meta["from"], "message_id": message_id}
+    if request_id.startswith("GMAIL-"):
+        inbox_runs.mark_replied(request_id.removeprefix("GMAIL-"))
+    return {"sent": True, "to": reply_meta["from"], "message_id": sent_message_id}
 
 
 # ---------------------------------------------------------------- shared: status/result/gaps/downloads
