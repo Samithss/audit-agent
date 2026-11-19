@@ -14,14 +14,13 @@ from .llm import call_reasoning
 from .validator import validate
 
 SYSTEM_PROMPT = """You draft a professional response letter from CreditNirvana's
-compliance team to a lender who sent an audit request, based ONLY on the JSON
+compliance team to the sender of an audit request, based ONLY on the JSON
 summary you are given -- never invent a fact not present in it.
 
 Rules:
 - Open with "Dear <recipient_name>," when the summary has a recipient_name, otherwise
-  "Dear Sir/Madam,". NEVER address the reader by an internal code like "Lender L001" --
-  that is a database id, not a name. Refer to the lender id only as a reference
-  (e.g. "your audit request for portfolio L001"), never in the salutation.
+  "Dear Sir/Madam,". Never mention any lender or portfolio id or other internal code;
+  just say "your audit request".
 - State plainly the audit period, how many accounts were checked, how many checks
   were run, and how many accounts had at least one gap.
 - Do NOT list per-check counts or severities in prose. The system inserts a results
@@ -79,7 +78,6 @@ def _summary_for_letter(request_id: str, decomposed_path, out_dir=OUT_DIR, recip
         # Who the reply is actually going to, when we know (a Gmail-sourced run
         # knows the real sender). None for sample/upload runs -> "Dear Sir/Madam".
         "recipient_name": recipient_name,
-        "lender_id": spec["lender_id"],
         "period": spec["period"],
         "accounts_sampled": int(verdicts.account_id.nunique()),
         "checks_run": len(spec["checks"]),

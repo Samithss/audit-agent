@@ -68,7 +68,7 @@ def build_gap_report(request_id: str, out_dir=OUT_DIR) -> Path:
                               for c in spec["checks"]])
     counts = verdicts.status.value_counts().to_dict()
     overview = pd.DataFrame([
-        ("Request", request_id), ("Lender", spec.get("lender_id", "")),
+        ("Request", request_id),
         ("Audit period", f"{spec['period']['from']} to {spec['period']['to']}"),
         ("Accounts tested", verdicts.account_id.nunique()), ("Checks run", len(spec["checks"])),
         ("Gap", counts.get("GAP", 0)), ("Cannot determine", counts.get("CANNOT_DETERMINE", 0)),
@@ -102,7 +102,7 @@ def build_request_interpretation(request_id: str, decomposed_path, out_dir=OUT_D
     lines = [
         f"# Request interpretation -- {request_id}",
         "",
-        f"Lender: {spec['lender_id']} | Period: {spec['period']['from']} to {spec['period']['to']}"
+        f"Period: {spec['period']['from']} to {spec['period']['to']}"
         f" | Source: {spec.get('source', '')}",
         "",
         f"## Checks extracted ({len(spec['checks'])})",

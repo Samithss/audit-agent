@@ -10,8 +10,7 @@ export default function AccountsField({ file, setFile, disabled }) {
         onChange={(e) => setFile(e.target.files?.[0] ?? null)}
       />
       <p className="muted small">
-        CSV or Excel with an <code>account_id</code> column. Exactly these accounts are tested, and the lender is
-        detected from them automatically.
+        CSV or Excel with an <code>account_id</code> column. Exactly these accounts are tested.
         {file && <> Using <strong>{file.name}</strong>.</>}
       </p>
       {file && <button className="toggle" onClick={() => setFile(null)} disabled={disabled}>Remove account list</button>}
