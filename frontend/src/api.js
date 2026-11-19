@@ -32,4 +32,10 @@ export const api = {
     return fetch(`${BASE}/requests/${id}/gaps${qs ? `?${qs}` : ""}`).then(json)
   },
   downloadUrl: (id, kind) => `${BASE}/requests/${id}/download/${kind}`,
+
+  sendReply: (id, body) => {
+    const fd = new FormData()
+    fd.set("body", body)
+    return fetch(`${BASE}/requests/${id}/send-reply`, { method: "POST", body: fd }).then(json)
+  },
 }

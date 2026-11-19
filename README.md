@@ -87,6 +87,7 @@ The UI has three tabs, all converging on the same pipeline:
 | GET | `/api/inbox/auth-url` | Google's OAuth consent URL -- navigate the browser there to connect |
 | GET | `/api/inbox/messages` | candidate audit-request emails from the connected mailbox (subject/from/date/snippet) |
 | POST | `/api/inbox/messages/{message_id}/run` | run the pipeline on one specific email's content |
+| POST | `/api/requests/{id}/send-reply` | sends `body` (text) back to the original sender -- Gmail-sourced runs only, one send per request_id, never called automatically |
 | GET | `/api/requests/{id}/status` | poll: status + step log |
 | GET | `/api/requests/{id}/result` | checks, summary, letter, score (once status is `done`) |
 | GET | `/api/requests/{id}/gaps` | gap_items, optional `?check_type=` / `?severity=` filters |
@@ -158,13 +159,23 @@ scripted for you:
 6. Restart the API server (`uvicorn api.main:app --reload ...` -- `--reload`
    picks up the new env vars on the next file change, or just stop/start it).
 7. In the UI, open the **Gmail inbox** tab -> **Connect Gmail** -> sign in
-   and grant access in your own browser (this app only ever requests
-   `gmail.readonly` -- it can list and read messages, never send or delete
-   anything) -> you're redirected back to the app.
+   and grant access in your own browser (this app requests `gmail.readonly`
+   to list/read messages, and `gmail.send` so a human can send the drafted
+   reply -- it never deletes, archives, or auto-sends anything) -> you're
+   redirected back to the app.
 8. Click **Refresh inbox** to list candidate emails (matches
    `GMAIL_SEARCH_QUERY`, default: subject contains audit/compliance/annexure
    within the last 180 days), pick one, choose which lender's sample to test
    against, and run the agent.
+9. Once the run finishes, a **Send reply** section appears showing the
+   original sender's address and the drafted letter, editable. Nothing is
+   ever sent automatically -- you review (and can edit) the text, then click
+   Send and confirm. One reply per run; the reply threads into the original
+   email via Gmail's `In-Reply-To`/thread headers.
+
+Note: "Refresh inbox" always re-runs the search fresh -- there's no
+"already processed" tracking, so an email you've already run (or replied to)
+can still reappear in the list on the next refresh.
 
 ## 7. Legacy Streamlit demo (superseded, still runnable)
 

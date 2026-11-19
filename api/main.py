@@ -22,10 +22,14 @@ machinery (decompose -> run_checks -> pack -> letter), keyed by request_id:
        GET  /api/inbox/oauth/callback
        GET  /api/inbox/messages
        POST /api/inbox/messages/{message_id}/run
+       POST /api/requests/{id}/send-reply    -- sends the (human-reviewed, editable) letter back to
+                                                 the original sender. ONLY reachable via an explicit
+                                                 button click in the UI -- nothing here auto-sends.
 
 Shared, once a job is started under some request_id:
   GET /api/requests/{id}/status             -- poll: status + step log
-  GET /api/requests/{id}/result              -- full bundle once status == "done"
+  GET /api/requests/{id}/result              -- full bundle once status == "done" (includes
+                                                 reply_to / replied for Gmail-sourced runs)
   GET /api/requests/{id}/gaps                -- gap_items.csv, optionally filtered
   GET /api/requests/{id}/download/{kind}     -- gap_report.xlsx / request_interpretation.md / letter docx
 
@@ -266,10 +270,35 @@ def start_inbox_run(message_id: str, background_tasks: BackgroundTasks,
         raise HTTPException(400, f"unknown lender_id -- must be one of {list(LENDER_SAMPLES)}")
     text = gmail_client.get_message_text(message_id)
     request_id = f"GMAIL-{message_id}"
+    # fetched fresh from Gmail, not trusted from the client -- this is who
+    # /send-reply will actually send to later, once a human approves it.
+    reply_meta = gmail_client.get_message_meta(message_id)
     _start(request_id, background_tasks, text=text, lender_id=lender_id,
            period={"from": period_from, "to": period_to}, sample_file=LENDER_SAMPLES[lender_id],
            source=f"gmail:{message_id}")
+    _set(request_id, reply_meta=reply_meta, replied=False)
     return {"request_id": request_id, "status": "running"}
+
+
+@app.post("/api/requests/{request_id}/send-reply")
+def send_reply(request_id: str, body: str = Form(...)):
+    """Sends the (possibly human-edited) letter back to the original sender.
+    Only reachable for a Gmail-sourced run -- sample/upload runs have no real
+    inbox message to reply into. Nothing else in this app calls this; it only
+    runs when a human in the UI clicks Send."""
+    job = _job(request_id)
+    reply_meta = job.get("reply_meta")
+    if not reply_meta:
+        raise HTTPException(400, "this request has no originating email to reply to")
+    if job.get("replied"):
+        raise HTTPException(409, "a reply has already been sent for this request")
+
+    message_id = gmail_client.send_reply(
+        to=reply_meta["from"], subject=reply_meta["subject"], body_text=body,
+        thread_id=reply_meta.get("thread_id"), in_reply_to=reply_meta.get("message_id_header"),
+    )
+    _set(request_id, replied=True)
+    return {"sent": True, "to": reply_meta["from"], "message_id": message_id}
 
 
 # ---------------------------------------------------------------- shared: status/result/gaps/downloads
@@ -302,6 +331,7 @@ def run_result(request_id: str):
         except Exception as e:
             score = {"error": str(e)}
 
+    reply_meta = job.get("reply_meta")
     return {
         "request_id": request_id,
         "decomposed": {"checks": result["decomposed"]["checks"], "unsupported": result["decomposed"]["unsupported"]},
@@ -309,6 +339,8 @@ def run_result(request_id: str):
         "letter": {"text": result["letter"]["text"], "needs_human_review": result["letter"]["needs_human_review"],
                    "validation": result["letter"]["validation"]},
         "score": score,
+        "reply_to": reply_meta["from"] if reply_meta else None,
+        "replied": job.get("replied", False),
     }
 
 

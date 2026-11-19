@@ -99,14 +99,28 @@ mind. Two explicit pivots since:
     says). Generates its own `CUSTOM-xxxxxxxx` request_id so it never
     collides with the sample requests.
   - **Gmail inbox**: `agent/gmail_client.py` + `/api/inbox/*` -- OAuth
-    (`gmail.readonly`, never send/delete), lists candidate audit-request
-    emails by subject match, a human picks one from the UI and runs the
-    agent on it (`GMAIL-<message_id>`). The refresh token lives in
-    `audit.oauth_tokens`, one row, one mailbox. Needs a Google Cloud OAuth
-    client the operator creates themselves -- see README.md "Gmail inbox
-    setup". Fully coded; not live-tested end-to-end in this session since
-    that requires a real Google OAuth client and consent grant (can't be
-    done without the operator's own Google login).
+    (`gmail.readonly` + `gmail.send`), lists candidate audit-request emails
+    by subject match, a human picks one from the UI and runs the agent on it
+    (`GMAIL-<message_id>`). The refresh token lives in `audit.oauth_tokens`,
+    one row, one mailbox. Needs a Google Cloud OAuth client the operator
+    creates themselves -- see README.md "Gmail inbox setup". Fully coded;
+    not live-tested end-to-end in this session since that requires a real
+    Google OAuth client and consent grant (can't be done without the
+    operator's own Google login).
+  - **Sending the reply back**: `POST /api/requests/{id}/send-reply`
+    (`gmail_client.send_reply`), reachable ONLY from a Gmail-sourced run and
+    ONLY via an explicit button click in the new `ReplyPane` -- nothing in
+    this codebase ever calls it automatically. The recipient, subject, and
+    thread/`In-Reply-To` headers are re-fetched from the real Gmail message
+    at send time (`get_message_meta`), never trusted from the browser. The
+    UI shows the recipient, lets the human edit the letter text before
+    sending, requires an extra "I've reviewed this" checkbox when the
+    validator flagged `needs_human_review`, and a native browser confirm on
+    top of that. A reply can only be sent once per request_id
+    (`_jobs[id]["replied"]` guards against a double-send). Deliberately
+    manual-only -- see the design discussion in this session's transcript:
+    auto-sending an unreviewed compliance letter to a real lender is a real
+    legal/reputational risk, not a UX nicety to skip.
   - UI: added a 3-tab picker (Sample requests / Upload your own / Gmail
     inbox) and a visual pass (tab bar, card shadows, consistent
     field/button styling, pill badges) across the React frontend.

@@ -9,6 +9,7 @@ import ChecksPane from "./components/ChecksPane"
 import SummaryPane from "./components/SummaryPane"
 import GapsPane from "./components/GapsPane"
 import ScorecardPane from "./components/ScorecardPane"
+import ReplyPane from "./components/ReplyPane"
 import "./App.css"
 
 const TABS = [
@@ -148,6 +149,7 @@ export default function App() {
           <SummaryPane summary={result.summary} />
           <GapsPane gaps={gaps} />
           <ScorecardPane requestId={activeRequestId} score={result.score} letter={result.letter} />
+          <ReplyPane requestId={activeRequestId} letter={result.letter} replyTo={result.reply_to} replied={result.replied} />
         </>
       ) : (
         mode === "sample" && !running && activeRequestId && (

@@ -2,12 +2,15 @@
 Step 10 -- Gmail inbox integration. Lists candidate audit-request emails from
 a real mailbox and extracts their text (body or PDF attachment) so they can
 be fed into the same decompose() -> run_checks() -> pack() -> letter()
-pipeline as the sample requests.
+pipeline as the sample requests. Can also send the drafted reply back to the
+original sender -- but ONLY when a human in the UI explicitly clicks Send;
+nothing in this file or api/main.py ever calls send_reply() on its own.
 
 Single mailbox, single OAuth grant: the refresh token lives in
 audit.oauth_tokens (one row, provider='gmail'). This app never sees or
 stores your Google password -- only the token your own consent screen grants
-it, scoped to gmail.readonly (list + read messages, never send or delete).
+it, scoped to gmail.readonly + gmail.send (list/read messages, and send only
+when asked -- never delete, archive, or modify anything else in the mailbox).
 
 You never see your inbox's full contents through an LLM here either --
 list_candidate_messages() only returns metadata (subject/from/date/snippet)
@@ -16,7 +19,7 @@ single message a human explicitly clicks "run" on.
 """
 import base64
 import email
-from datetime import datetime, timezone
+from email.mime.text import MIMEText
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -26,7 +29,7 @@ from googleapiclient.discovery import build
 from . import db
 from .config import GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REDIRECT_URI, GMAIL_SEARCH_QUERY
 
-SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
+SCOPES = ["https://www.googleapis.com/auth/gmail.readonly", "https://www.googleapis.com/auth/gmail.send"]
 
 
 def _client_config():
@@ -146,6 +149,21 @@ def list_candidate_messages(max_results: int = 20) -> list[dict]:
     return out
 
 
+def get_message_meta(message_id: str) -> dict:
+    """Reply-threading metadata for ONE message, fetched fresh at send time --
+    never trusts anything the browser claims about who the recipient is."""
+    svc = _service()
+    msg = svc.users().messages().get(userId="me", id=message_id, format="metadata",
+                                     metadataHeaders=["Subject", "From", "Message-Id", "Message-ID"]).execute()
+    headers = {h["name"]: h["value"] for h in msg["payload"].get("headers", [])}
+    return {
+        "from": headers.get("From", ""),
+        "subject": headers.get("Subject", "(no subject)"),
+        "message_id_header": headers.get("Message-Id") or headers.get("Message-ID", ""),
+        "thread_id": msg.get("threadId"),
+    }
+
+
 def get_message_text(message_id: str) -> str:
     """Prefers a PDF attachment's extracted text (matches how REQ-02 is
     handled today); falls back to the plain-text body."""
@@ -173,3 +191,27 @@ def get_message_text(message_id: str) -> str:
         return email.message_from_string(raw).get_payload() if raw else ""
 
     raise ValueError(f"message {message_id} has neither a PDF attachment nor a text body")
+
+
+def send_reply(to: str, subject: str, body_text: str, thread_id: str = None, in_reply_to: str = None) -> str:
+    """Sends ONE email. Called only from api/main.py's /send-reply endpoint,
+    which only runs when a human clicks Send in the UI -- there is no
+    scheduler, webhook, or automatic trigger anywhere that calls this. Threads
+    the reply into the original conversation when thread_id/in_reply_to are
+    given (both come from get_message_meta() on the real inbound message,
+    never from client-supplied values)."""
+    msg = MIMEText(body_text)
+    msg["to"] = to
+    msg["subject"] = subject if subject.lower().startswith("re:") else f"Re: {subject}"
+    if in_reply_to:
+        msg["In-Reply-To"] = in_reply_to
+        msg["References"] = in_reply_to
+    raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
+
+    body = {"raw": raw}
+    if thread_id:
+        body["threadId"] = thread_id
+
+    svc = _service()
+    sent = svc.users().messages().send(userId="me", body=body).execute()
+    return sent["id"]
