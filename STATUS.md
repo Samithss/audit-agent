@@ -6,12 +6,14 @@ This file is the "what's actually done" record. `README.md` has the run instruct
 
 ## TL;DR
 
-All 9 build steps are done. The pipeline runs end to end against **Postgres**
+All 10 build steps are done. The pipeline runs end to end against **Postgres**
 (not CSV), behind a **FastAPI** backend and a **React** frontend (not
 Streamlit -- that app still exists but is superseded). LLM calls go through
 **Sarvam's gateway** (Deepseek for reasoning, Sarvam's own model for
 conversational transcript review, Sarvam Prism for decision scoring), not
-Anthropic.
+Anthropic. Beyond the 3 canned demo requests, you can now run the agent
+against an **uploaded PDF or pasted email text**, or against **real emails
+pulled from a connected Gmail inbox** (OAuth, read-only).
 
 Measured on REQ-01/02/03 against the synthetic ground truth:
 
@@ -90,6 +92,35 @@ mind. Two explicit pivots since:
     request picker, live run log, checks/unsupported, run summary, filterable
     gap table with a click-to-inspect evidence drawer, scorecard + letter +
     downloads. Dark/light theme aware, verified mobile-responsive.
+- [x] **Step 10** -- three ways in, one pipeline:
+  - **Upload your own**: `POST /api/custom/run` accepts a PDF or pasted text
+    plus which lender's sample to test against (the dataset only has real
+    account data for 3 lenders, independent of what the uploaded letter
+    says). Generates its own `CUSTOM-xxxxxxxx` request_id so it never
+    collides with the sample requests.
+  - **Gmail inbox**: `agent/gmail_client.py` + `/api/inbox/*` -- OAuth
+    (`gmail.readonly`, never send/delete), lists candidate audit-request
+    emails by subject match, a human picks one from the UI and runs the
+    agent on it (`GMAIL-<message_id>`). The refresh token lives in
+    `audit.oauth_tokens`, one row, one mailbox. Needs a Google Cloud OAuth
+    client the operator creates themselves -- see README.md "Gmail inbox
+    setup". Fully coded; not live-tested end-to-end in this session since
+    that requires a real Google OAuth client and consent grant (can't be
+    done without the operator's own Google login).
+  - UI: added a 3-tab picker (Sample requests / Upload your own / Gmail
+    inbox) and a visual pass (tab bar, card shadows, consistent
+    field/button styling, pill badges) across the React frontend.
+  - **Bug found and fixed while testing this**: `decompose.py` could return
+    an empty `severity_order`/`severity_rules` when the source request had
+    no severity/grading section of its own (realistic for a short pasted
+    email) -- `severity.grade()` then raised "no rule matches" and the run
+    crashed. Fixed with a code-level backstop
+    (`_fill_severity_defaults` in `agent/decompose.py`): every check_type
+    actually extracted is guaranteed at least one severity rule, defaulting
+    sensibly (consent/verification/certification -> CRITICAL, template/
+    hours/recording/notice -> MAJOR, frequency -> MINOR) when the model
+    didn't write one itself. A check_type the model DID grade (even
+    partially, with `gap_types`) is left untouched.
 
 ## Verified live (this session)
 
@@ -106,6 +137,20 @@ mind. Two explicit pivots since:
   evidence drawer showed the exact record, confirmed scorecard metrics and
   download links, confirmed no console errors, found and fixed one real
   mobile-layout bug (summary table caused horizontal overflow at 375px).
+- Step 10 upload flow: tested via curl (PDF upload, pasted text, missing
+  file+text -> 400, unknown lender_id -> 400) and live in the browser (both
+  the PDF and paste-text paths, including the full UI transition from
+  "Running..." to rendered Checks/Summary/Gaps/Scorecard panes without a page
+  reload, driven entirely by the frontend's own status polling). The
+  severity-defaults bug above was caught by this testing, not invented --
+  the minimal one-sentence pasted request is a realistic case, not an edge
+  case contrived to find a bug.
+- Step 10 Gmail flow: `/api/inbox/status` confirmed to correctly report
+  `{"configured": false}` with no Google credentials set, and the UI
+  correctly shows the "not configured" message on the Gmail inbox tab. The
+  OAuth exchange / message listing / message-run code paths are written
+  against the real Gmail API client library but could not be exercised
+  end-to-end without a real Google OAuth client and a human consent grant.
 
 ## Known caveats
 

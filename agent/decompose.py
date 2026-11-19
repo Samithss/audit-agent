@@ -42,6 +42,26 @@ GAP_TYPES_BY_CHECK = {
     "NOTICE_TIMELINE": ["no_proof_of_service", "served_late"],
 }
 
+# Fallback severity, used ONLY when the model didn't produce any rule at all
+# for a check_type it extracted (e.g. the request has no grading/severity
+# section of its own -- common for a short pasted email or ad hoc upload).
+# severity.grade() raises on an unmatched check_type/gap_type pair, so every
+# check_type the model actually used MUST end up with at least one rule --
+# this is the code-level guarantee for that, independent of whether the model
+# remembered to write one. A check_type the request DOES grade explicitly is
+# never touched here (see _fill_severity_defaults).
+DEFAULT_SEVERITY_ORDER = ["CRITICAL", "MAJOR", "MINOR"]
+DEFAULT_SEVERITY_BY_CHECK = {
+    "CONSENT_BEFORE_CONTACT": "CRITICAL",
+    "VERIFICATION_BEFORE_DISCLOSURE": "CRITICAL",
+    "AGENT_CERTIFICATION": "CRITICAL",
+    "TEMPLATE_APPROVED": "MAJOR",
+    "CALL_HOURS": "MAJOR",
+    "CALL_RECORDING": "MAJOR",
+    "NOTICE_TIMELINE": "MAJOR",
+    "CALL_FREQUENCY": "MINOR",
+}
+
 
 class CheckSpec(BaseModel):
     check_id: str
@@ -184,6 +204,26 @@ def _normalize_ws(s: str) -> str:
     return re.sub(r"\s+", " ", s).strip()
 
 
+def _fill_severity_defaults(checks: list[dict], severity_order: list[str], severity_rules: list[dict]) -> tuple:
+    """Guarantee every check_type actually extracted has at least one severity
+    rule mentioning it, so severity.grade() can never raise with "no rule
+    matches" just because the source request never spelled out a grading
+    scale. A check_type the model DID write a rule for (even a partial,
+    gap_types-qualified one) is left exactly as the model wrote it -- this
+    only fills in check_types with ZERO rules at all."""
+    severity_order = list(severity_order) or list(DEFAULT_SEVERITY_ORDER)
+    severity_rules = list(severity_rules)
+    mentioned = {r.get("check_type") for r in severity_rules}
+    for check_type in dict.fromkeys(c["check_type"] for c in checks):
+        if check_type in mentioned:
+            continue
+        severity = DEFAULT_SEVERITY_BY_CHECK.get(check_type, "MAJOR")
+        severity_rules.append({"check_type": check_type, "severity": severity})
+        if severity not in severity_order:
+            severity_order.append(severity)
+    return severity_order, severity_rules
+
+
 def decompose(request_text: str, request_id: str, lender_id: str, period: dict, sample_file: str,
               source: str = "") -> dict:
     """Returns a dict in the same shape as eval/hand_checks/REQ-0X.json, plus an
@@ -206,6 +246,10 @@ def decompose(request_text: str, request_id: str, lender_id: str, period: dict, 
         else:
             unsupported.append(c.model_dump())
 
+    severity_order, severity_rules = _fill_severity_defaults(
+        checks, parsed.severity_order, [r.model_dump(exclude_none=True) for r in parsed.severity_rules]
+    )
+
     return {
         "request_id": request_id,
         "source": source,
@@ -214,6 +258,6 @@ def decompose(request_text: str, request_id: str, lender_id: str, period: dict, 
         "sample_file": sample_file,
         "checks": checks,
         "unsupported": unsupported,
-        "severity_order": parsed.severity_order,
-        "severity_rules": [r.model_dump(exclude_none=True) for r in parsed.severity_rules],
+        "severity_order": severity_order,
+        "severity_rules": severity_rules,
     }
