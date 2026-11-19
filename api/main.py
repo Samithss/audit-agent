@@ -376,30 +376,16 @@ def inbox_oauth_callback(code: str | None = None, state: str | None = None, erro
     return RedirectResponse(f"{FRONTEND_URL}/?inbox=connected")
 
 
-@app.get("/api/inbox/messages")
-def inbox_messages():
-    if not gmail_client.is_connected():
-        raise HTTPException(409, "Gmail is not connected -- call /api/inbox/auth-url first")
-    candidates = gmail_client.list_candidate_messages()
-    inbox_runs.sync_new_messages(candidates)  # inserts a NEW row (+ Prism score) for anything not seen before
-    tracked = inbox_runs.list_statuses([c["message_id"] for c in candidates])
-    for c in candidates:
-        row = tracked.get(c["message_id"], {})
-        c["status"] = row.get("status", "NEW")
-        c["is_audit_request"] = row.get("is_audit_request")
-        c["confidence"] = row.get("confidence")
-        c["request_id"] = row.get("request_id")
-    return candidates
-
-
-@app.post("/api/inbox/messages/{message_id}/run", status_code=202)
-async def start_inbox_run(message_id: str, background_tasks: BackgroundTasks,
-                           period_from: str | None = Form(None), period_to: str | None = Form(None),
-                           lender_id: str | None = Form(None), accounts_file: UploadFile | None = File(None)):
+def _begin_gmail_run(message_id: str, background_tasks: BackgroundTasks, lender_id: str | None = None,
+                     period_from: str | None = None, period_to: str | None = None,
+                     accounts_bytes: bytes | None = None, accounts_name: str | None = None,
+                     text: str | None = None) -> str:
+    """Shared by the manual 'Run agent on this email' button and the
+    auto-start path below -- same pipeline either way."""
     request_id = f"GMAIL-{message_id}"
-    ann = await accounts_file.read() if accounts_file else None
-    lender_id, sample_file = _resolve_sample(request_id, lender_id or None, ann, accounts_file.filename if accounts_file else None)
-    text = gmail_client.get_message_text(message_id)
+    if text is None:
+        text = gmail_client.get_message_text(message_id)
+    lender_id, sample_file = _resolve_sample(request_id, lender_id, accounts_bytes, accounts_name, text)
     # fetched fresh from Gmail, not trusted from the client -- this is who
     # /send-reply will actually send to later, once a human approves it.
     reply_meta = gmail_client.get_message_meta(message_id)
@@ -408,6 +394,60 @@ async def start_inbox_run(message_id: str, background_tasks: BackgroundTasks,
            source=f"gmail:{message_id}")
     _set(request_id, reply_meta=reply_meta, replied=False)
     inbox_runs.mark_processing(message_id, request_id)
+    return request_id
+
+
+def _try_autostart(message_id: str, background_tasks: BackgroundTasks) -> bool:
+    """Auto-starts a run with no human click -- but ONLY when the email body
+    itself names real account ids (agent/decompose.py-adjacent regex,
+    \\bACC\\d+\\b). There's no human in this path to attach an account list,
+    so a message with no inline ids just stays NEW for manual handling.
+    Never lets one bad auto-start attempt break the whole /messages response."""
+    import re
+    try:
+        text = gmail_client.get_message_text(message_id)
+    except Exception:
+        return False
+    if not re.search(r"\bACC\d+\b", text, re.I):
+        return False
+    try:
+        _begin_gmail_run(message_id, background_tasks, text=text)
+        return True
+    except Exception:
+        return False
+
+
+@app.get("/api/inbox/messages")
+def inbox_messages(background_tasks: BackgroundTasks):
+    if not gmail_client.is_connected():
+        raise HTTPException(409, "Gmail is not connected -- call /api/inbox/auth-url first")
+    candidates = gmail_client.list_candidate_messages()
+    inbox_runs.sync_new_messages(candidates)  # inserts a NEW row (+ Prism score) for anything not seen before
+    tracked = inbox_runs.list_statuses([c["message_id"] for c in candidates])
+    visible = []
+    for c in candidates:
+        row = tracked.get(c["message_id"], {})
+        is_audit = row.get("is_audit_request")
+        if is_audit is False:
+            continue  # Prism is confident this isn't an audit request -- keep the list to real ones
+        c["status"] = row.get("status", "NEW")
+        c["is_audit_request"] = is_audit
+        c["confidence"] = row.get("confidence")
+        c["request_id"] = row.get("request_id")
+        if c["status"] == "NEW" and is_audit and _try_autostart(c["message_id"], background_tasks):
+            c["status"] = "PROCESSING"
+            c["request_id"] = f"GMAIL-{c['message_id']}"
+        visible.append(c)
+    return visible
+
+
+@app.post("/api/inbox/messages/{message_id}/run", status_code=202)
+async def start_inbox_run(message_id: str, background_tasks: BackgroundTasks,
+                           period_from: str | None = Form(None), period_to: str | None = Form(None),
+                           lender_id: str | None = Form(None), accounts_file: UploadFile | None = File(None)):
+    ann = await accounts_file.read() if accounts_file else None
+    request_id = _begin_gmail_run(message_id, background_tasks, lender_id or None, period_from, period_to,
+                                  ann, accounts_file.filename if accounts_file else None)
     return {"request_id": request_id, "status": "running"}
 
 

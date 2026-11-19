@@ -200,8 +200,24 @@ NEW -> PROCESSING -> NEEDS_REVIEW -> REPLIED
 - UI: each inbox row now shows a status chip and the confidence caption;
   clicking a `NEEDS_REVIEW`/`ERROR`/`REPLIED` row jumps straight to that run's
   result instead of needing to remember which account list/dates were used.
-- Still manual-start, per the earlier decision: reaching `NEW` never
-  auto-triggers a run. A human still clicks "Run agent on this email."
+- **Revised after the first live test**: the user explicitly asked for two
+  changes to the original manual-only design, after seeing it in practice --
+  (1) hide emails Prism scores as not a real audit request, rather than just
+  captioning them, and (2) auto-start a run with no click at all when a `NEW`
+  email is classified `is_audit_request=True`. Both are now built, with one
+  guardrail kept: auto-start only fires when the email body itself names real
+  account ids (`\bACC\d+\b`) -- there's no human in that path to attach an
+  account list, so a qualifying email with no inline ids still waits for a
+  manual click. Verified against the real connected mailbox: a genuine audit
+  request (confidence 85%) auto-started on refresh with zero clicks and
+  produced a correct result (4/4 accounts flagged for a real seeded
+  WhatsApp-consent gap, CRITICAL); an unrelated GitHub notification
+  (confidence 3%) no longer appears in the list at all.
+- Also fixed in the same pass: the "Run agent on this email" button
+  previously *required* an attached account-list file even though the
+  backend already extracts account ids straight from the email body --
+  real frontend/backend mismatch, not user error. `canRun` no longer
+  requires a file.
 
 ## Parallel work landed from likhithg-png/audit-agent (synced into this branch)
 
