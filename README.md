@@ -4,27 +4,84 @@ For each audit request, the agent returns a verdict per account and check: EVIDE
 
 Design: **the LLM plans and writes; deterministic code decides verdicts.**
 
-## Setup (Ubuntu)
+Data lives in **Postgres** (via Docker), LLM calls go through **Sarvam's
+gateway** (Deepseek / Sarvam / Sarvam Prism), and the UI is **React +
+FastAPI**. See [STATUS.md](STATUS.md) for the full build record, caveats, and
+what each piece does.
 
-Run once:
+## 1. Prerequisites
+
+- Python 3.11+
+- Node 18+ (for the React frontend)
+- Docker + Docker Compose (for Postgres)
+- A Sarvam API key (`SARVAM_API_KEY`)
+
+## 2. One-time setup
+
 ```bash
-cd ~/Desktop/audit-agent
+cd audit-agent
 python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+
+cp .env.example .env
+# edit .env: set SARVAM_API_KEY. DATABASE_URL already points at the
+# docker-compose Postgres (localhost:55433) -- only change it if you're
+# running Postgres elsewhere.
 ```
 
-Run in every new terminal:
+```bash
+cd frontend
+npm install
+cd ..
+```
+
+## 3. Start Postgres and load the data
+
+```bash
+docker compose up -d
+# wait for it to report healthy:
+docker compose ps
+```
+
+Load the CSVs into Postgres (idempotent -- safe to re-run after a data refresh):
 ```bash
 source .venv/bin/activate
+python -m scripts.load_to_postgres
 ```
 
-Install the dependencies:
+## 4. Run the backend + frontend (the primary UI)
+
+In one terminal:
 ```bash
-pip install -r requirements.txt
+source .venv/bin/activate
+uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-## Run
+In another terminal:
+```bash
+cd frontend
+npm run dev -- --host 0.0.0.0 --port 5173
+```
 
-Run the checks for REQ-01 to REQ-03 using `eval/hand_checks/*.json`, writing to `out/<REQ>/`:
+Open **http://localhost:5173**. The Vite dev server proxies `/api/*` to
+`localhost:8000` (see `frontend/vite.config.js`) -- no extra config needed.
+
+### FastAPI endpoints (if you want to hit the API directly)
+
+| Method | Path | What |
+|---|---|---|
+| GET | `/api/requests` | sample request catalogue |
+| GET | `/api/requests/{id}/text` | raw request text (email/PDF extracted) |
+| POST | `/api/requests/{id}/run` | kick off decompose -> run_checks -> pack -> letter in the background |
+| GET | `/api/requests/{id}/status` | poll: status + step log |
+| GET | `/api/requests/{id}/result` | checks, summary, letter, score (once status is `done`) |
+| GET | `/api/requests/{id}/gaps` | gap_items, optional `?check_type=` / `?severity=` filters |
+| GET | `/api/requests/{id}/download/{kind}` | `gap_report` / `request_interpretation` / `letter` file |
+
+## 5. CLI pipeline (optional -- useful for batch runs or CI)
+
+Run the checks for REQ-01 to REQ-03 using `eval/hand_checks/*.json`, writing to `out/<REQ>/` and to Postgres:
 ```bash
 python -m agent.run_checks --all
 ```
@@ -49,28 +106,71 @@ Each request writes three files to `out/<REQ>/`:
 - `gap_items.csv`: one row per gap (never merged), with record IDs and severity.
 - `summary.csv`: counts per check and status.
 
+...and is additively persisted to Postgres (`audit.runs` / `audit.verdicts` / `audit.gap_items`) under its own `run_id`.
+
+To drive the LLM steps directly instead of the hand-written checks, see
+`agent/decompose.decompose()` -- the FastAPI `/run` endpoint
+(`api/main.py:_execute`) and the legacy `app.py` both show the full
+decompose -> run_checks -> pack -> letter wiring end to end.
+
+## 6. Legacy Streamlit demo (superseded, still runnable)
+
+```bash
+streamlit run app.py
+```
+
+This was the original demo UI before the React + FastAPI move. Kept for
+reference; the primary UI is now the one in step 4.
+
+## Environment variables
+
+| Variable | Default | What |
+|---|---|---|
+| `SARVAM_API_KEY` | (none -- required) | Sarvam gateway key |
+| `SARVAM_BASE_URL` | `https://api.sarvam.ai/v2` | Sarvam API base |
+| `SARVAM_MODEL_REASONING` | `deepseekv4.1-flash-1017` | decompose, letter drafting |
+| `SARVAM_MODEL_CONVERSATIONAL` | `sarvam-105b-conversations` | transcript labelling |
+| `SARVAM_MODEL_DECISION` | `sarvam-prism` | structured decision scoring (`/v2/systemone`) |
+| `DATABASE_URL` | `postgresql://audit:audit@localhost:55433/audit` | Postgres connection |
+| `AUDIT_DATA_DIR` | `./data` | source CSVs |
+| `AUDIT_OUT_DIR` | `./out` | per-request output (verdicts/gaps/summary/pack/letter) |
+
 ## Layout
 ```
-config/source_registry.yaml   sources, keys, and the time zone of every timestamp (D4 = IST; D5, D10 = UTC)
-agent/tools.py                read-only evidence tools: UTC conversion, collector-ID normalization, de-duplication
-agent/rules.py                D12 rules (effective dates, strictest applies) and the business-day calendar
-agent/verdict.py              Verdict class: EVIDENCED without citations raises an error
-agent/checks.py               the 8 deterministic checks
-agent/transcript_rules.py     temporary keyword transcript analyzer (an LLM reviewer replaces it in step 6)
-agent/severity.py             grades gaps on the request's scale
-agent/run_checks.py           runner for stages 3-5
-eval/hand_checks/REQ-0X.json  hand-written checks.json (what the LLM decomposer must produce)
-eval/score.py                 recall, false-gap rate, unsupported claims, severity accuracy
-data/                         synthetic data and ground truth (regenerate: python scripts/generate_data.py)
+docker-compose.yml             Postgres 16 (port 55433 -- picked to avoid colliding with other local containers)
+sql/001_schema.sql             audit schema: 10 source-mirror tables + 4 generated-data tables (runs/verdicts/gap_items/transcript_labels)
+scripts/load_to_postgres.py    idempotent CSV -> Postgres loader
+config/source_registry.yaml    sources, keys, and the time zone of every timestamp (D4 = IST; D5, D10 = UTC)
+agent/db.py                    psycopg connection helper
+agent/tools.py                 read-only evidence tools: UTC conversion, collector-ID normalization, de-duplication (_raw() is the only Postgres-aware method)
+agent/rules.py                 D12 rules (effective dates, strictest applies) and the business-day calendar
+agent/verdict.py               Verdict class: EVIDENCED without citations raises an error
+agent/checks.py                the 8 deterministic checks
+agent/severity.py              grades gaps on the request's scale
+agent/run_checks.py            runner for stages 3-5; also persists each run to Postgres
+agent/llm.py                   thin Sarvam client (reasoning / conversational / decision)
+agent/decompose.py             Step 5: request text/PDF -> checks.json (Deepseek via Sarvam)
+agent/transcript_review.py     Step 6: transcript -> outcome labels (Sarvam conversational), cached in audit.transcript_labels
+agent/pack.py                  Step 7a: gap_report.xlsx + request_interpretation.md
+agent/letter.py                Step 7b: draft response letter from a summary only
+agent/validator.py             Step 7c: softening language / PII / disclaimer / gap-mention checks
+api/main.py                    Step 9: FastAPI backend (background jobs, status polling, downloads)
+frontend/                      Step 9: React + Vite UI (checks, summary, gap table + evidence drawer, scorecard, letter, downloads)
+app.py                         Step 8: Streamlit demo (superseded by api/ + frontend/)
+eval/hand_checks/REQ-0X.json   hand-written checks.json (what the LLM decomposer must produce)
+eval/score.py                  recall, false-gap rate, unsupported claims, severity accuracy
+data/                          synthetic data and ground truth (regenerate: python scripts/generate_data.py)
 ```
 
 ## Status
-- [x] Steps 1-4: data layer, rules, 8 checks, verdicts, severity, scorer. On the 3 public requests, the hand-written checks score 100% recall, 0% false gaps and 0 unsupported claims.
-  - Caveat: the synthetic answer key applies the same rule readings as this engine, so 100% here proves the code is wired correctly, not that it is robust. The organizers' real data will differ, so re-check every assumption in `source_registry.yaml`.
-- [ ] Step 5, `agent/decompose.py`: the LLM turns request text or PDF into checks.json. Target: match `eval/hand_checks`.
-- [ ] Step 6, `agent/transcript_review.py`: the LLM finds the verification and disclosure turns with exact quotes; code verifies the quotes.
-- [ ] Step 7:
-  - `pack.py`: index.html, extracts, record references.
-  - `letter.py`: the draft letter.
-  - `validator.py`: no uncited claims, counts reconcile, no softening words, PII masked.
-- [ ] Step 8: Streamlit demo and a 300-account timing run.
+
+See [STATUS.md](STATUS.md) for the full build record (all 9 steps, what was
+verified, and known caveats). Short version: all steps are done, and the
+measured metrics on REQ-01/02/03 are 100% gap recall, 1.7% false-gap rate, 0
+unsupported claims.
+
+- Caveat carried over from the original engine: the synthetic answer key
+  applies the same rule readings as this engine, so 100% recall here proves
+  the code is wired correctly, not that it is robust against real-world data
+  that reads the rules differently. Re-check every assumption in
+  `source_registry.yaml` against the organizers' real data.

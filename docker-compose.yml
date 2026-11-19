@@ -1,0 +1,20 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: audit-agent-db
+    environment:
+      POSTGRES_USER: audit
+      POSTGRES_PASSWORD: audit
+      POSTGRES_DB: audit
+    ports:
+      - "55433:5432"   # dedicated port -- 55432 is already used by another project's postgres on this host
+    volumes:
+      - audit_pgdata:/var/lib/postgresql/data
+      - ./sql:/docker-entrypoint-initdb.d:ro   # schema applies automatically on first boot
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U audit"]
+      interval: 3s
+      retries: 20
+
+volumes:
+  audit_pgdata:

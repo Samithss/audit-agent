@@ -9,7 +9,7 @@ Batch retrieval per check (not per account) keeps a 300-account request fast.
 from collections import defaultdict
 from datetime import timedelta
 
-from .transcript_rules import analyze_call
+from .transcript_review import label_calls
 from .verdict import Finding, Verdict
 
 CONNECTED_PREFIX = "CONNECTED"
@@ -191,6 +191,7 @@ def verification_before_disclosure(ctx, spec, accounts):
     calls = _connected(ctx, accounts)
     tx = ctx.tools.transcripts(calls.contact_id)
     tx_by = {k: g for k, g in tx.groupby("call_id")}
+    labels = label_calls(tx_by)  # Option B: labels only calls in THIS request; cached forever after
     by_acc = _group(calls)
     out = []
     for a in accounts:
@@ -203,7 +204,11 @@ def verification_before_disclosure(ctx, spec, accounts):
             if t is None:
                 cd.append(Finding("transcript_missing", [r.contact_id], "No recording/transcript; cannot test order of verification and disclosure"))
                 continue
-            outcome, turns, detail = analyze_call(t)
+            label = labels.get(r.contact_id)
+            if label is None:
+                cd.append(Finding("label_failed", [r.contact_id], "Model could not reliably label this call; treated as cannot-determine"))
+                continue
+            outcome, turns, detail = label
             refs = [f"{r.contact_id}#turn{n}" for n in turns]
             if outcome == "ok":
                 ev += [r.contact_id] + refs

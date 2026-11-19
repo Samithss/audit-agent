@@ -5,7 +5,12 @@ Run the deterministic pipeline (Stages 3-5) for one request, from a checks.json.
     python -m agent.run_checks --all
     python -m agent.run_checks REQ-01 --checks path/to/llm_checks.json
 
-Outputs out/<REQ>/verdicts.csv, gap_items.csv, summary.csv
+Outputs out/<REQ>/verdicts.csv, gap_items.csv, summary.csv -- AND, additively,
+persists the same run to Postgres (audit.runs / audit.verdicts / audit.gap_items)
+with its own run_id, so every run is kept as queryable history, not just
+whatever the last CLI invocation happened to leave in out/. The CSVs are
+unchanged -- pack.py, letter.py, eval/score.py and app.py keep reading them
+exactly as before.
 """
 import argparse
 import json
@@ -14,12 +19,60 @@ from datetime import date
 from pathlib import Path
 
 import pandas as pd
+from psycopg.types.json import Json
 
+from . import db
 from .checks import CHECKS, Context
 from .config import DATA_DIR, HAND_CHECKS, OUT_DIR
 from .rules import Policy
 from .severity import grade, worst
 from .tools import Tools
+
+
+def _persist_run(spec, vdf, gaps_rows):
+    """Insert one audit.runs row + its verdicts/gap_items. Never raises into
+    the caller -- a DB hiccup here must not stop the CSVs (the proven output
+    path) from being written."""
+    try:
+        with db.connect() as conn, conn.cursor() as cur:
+            cur.execute(
+                """INSERT INTO audit.runs
+                   (request_id, lender_id, period_from, period_to, sample_file, source,
+                    checks, unsupported, severity_order, severity_rules)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING run_id""",
+                (spec["request_id"], spec.get("lender_id"), spec["period"]["from"], spec["period"]["to"],
+                 spec.get("sample_file"), spec.get("source"), Json(spec["checks"]),
+                 Json(spec.get("unsupported", [])), Json(spec["severity_order"]), Json(spec["severity_rules"])),
+            )
+            run_id = cur.fetchone()["run_id"]
+
+            if len(vdf):
+                cur.executemany(
+                    """INSERT INTO audit.verdicts
+                       (run_id, request_id, account_id, check_id, check_type, status, severity,
+                        items_tested, gap_items, gap_types, cannot_determine_reasons,
+                        evidence_count, evidence_ids, rule_refs)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                    [(run_id, r.request_id, r.account_id, r.check_id, r.check_type, r.status,
+                      r.severity or None, int(r.items_tested), int(r.gap_items), r.gap_types,
+                      r.cannot_determine_reasons, int(r.evidence_count), r.evidence_ids, r.rule_refs)
+                     for r in vdf.itertuples()],
+                )
+            if gaps_rows:
+                cur.executemany(
+                    """INSERT INTO audit.gap_items
+                       (gap_item_id, run_id, request_id, account_id, check_id, check_type,
+                        gap_type, severity, record_ids, detail)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                    [(g["gap_item_id"], run_id, g["request_id"], g["account_id"], g["check_id"],
+                      g["check_type"], g["gap_type"], g["severity"], g["record_ids"], g["detail"])
+                     for g in gaps_rows],
+                )
+            conn.commit()
+        return run_id
+    except Exception as e:
+        print(f"  warning: could not persist run to Postgres ({e}); CSV output is unaffected")
+        return None
 
 
 def run(spec_path, tools=None, out_dir=OUT_DIR, verbose=True):
@@ -56,11 +109,16 @@ def run(spec_path, tools=None, out_dir=OUT_DIR, verbose=True):
     summ = (vdf.pivot_table(index=["check_id", "check_type"], columns="status", values="account_id",
                             aggfunc="count", fill_value=0).reset_index())
     summ.to_csv(od / "summary.csv", index=False)
+
+    run_id = _persist_run(spec, vdf, gaps)  # additive -- CSVs above are already written either way
+
     if verbose:
         print(f"\n=== {rid}: {len(sample)} accounts x {len(spec['checks'])} checks in {time.time() - t0:.1f}s ===")
         print(summ.to_string(index=False))
         for n in dict.fromkeys(tools.notes):
             print("  note:", n)
+        if run_id:
+            print(f"  persisted to Postgres: audit.runs.run_id = {run_id}")
     return vdf
 
 
