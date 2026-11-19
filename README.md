@@ -52,6 +52,17 @@ python -m scripts.load_to_postgres
 
 ## 4. Run the backend + frontend (the primary UI)
 
+**One command, once setup (steps 1-3) is done:**
+```bash
+./start.sh
+```
+Brings up Postgres (if it isn't already), then the API and frontend together.
+Ctrl+C stops the API and frontend; Postgres is left running since it's a real
+database, not a dev-reload process (`docker compose down` to stop that too).
+
+Or run the two pieces separately (useful for watching one's logs on its own,
+or restarting just one):
+
 In one terminal:
 ```bash
 source .venv/bin/activate
