@@ -238,12 +238,44 @@ wired into `eval/score.py`'s recall/false-gap-rate scoring yet, and the
 `DND_COMPLIANCE`/agent-background-verification checks discussed earlier in
 this session still aren't built.
 
+## Step 12 -- attachments, and making a finished run survive a restart
+
+Three things came out of the first real round-trip through a live mailbox:
+
+- **Attachments.** The reply carried only prose; the evidence pack was
+  download-only in the UI. `send_reply` now takes an `attachments` list and
+  nests the `multipart/alternative` body inside a `multipart/mixed`, and
+  `ReplyPane` offers the same three files the Downloads row does
+  (gap_report.xlsx / request_interpretation.md / response_letter_DRAFT.docx).
+  Nothing is attached unless a human ticks it, and the confirm dialog says how
+  many are going.
+- **A finished run no longer dies with the process** (`sql/006_run_results.sql`
+  + `agent/run_results.py`). The drafted letter and the reply metadata were the
+  only things living purely in `_jobs`; everything else `/result` returns was
+  already on disk. That meant a Gmail message sitting at `NEEDS_REVIEW` became
+  permanently unreachable the moment uvicorn reloaded -- the status row said "a
+  human still needs to review this" while the draft it pointed at was gone, so
+  the reply could never be sent. In production that would strand pending work
+  on every deploy. Both are now persisted, `/result` falls back to disk + DB,
+  and `/send-reply` reads the recipient from the DB when memory is empty.
+  Verified by running a real Gmail message, restarting the API, and confirming
+  the draft, recipient and all result panes still render.
+- **Two bugs found in the previous commit's own code**, both via the live
+  test: (1) the "hide non-audit emails" filter hid messages that had *already
+  been processed*, stranding a `NEEDS_REVIEW` run where no human could reach
+  it -- the filter now only applies while a message is still `NEW`; (2)
+  `onViewExisting` only loaded a result when the in-memory status said
+  `"done"`, so after a restart ("idle") it silently rendered nothing.
+
 ## Known caveats
 
-- The FastAPI job store (`_jobs` in `api/main.py`) is in-process memory -- a
-  restart loses in-flight run status (not run *data*; `out/<REQ>/` and
-  Postgres already hold that). Fine for one backend process; would need a
-  shared store (Postgres row, Redis) behind more than one worker.
+- The FastAPI job store (`_jobs` in `api/main.py`) is still in-process memory,
+  but no longer load-bearing. A restart loses the live step-by-step *log* of a
+  run; it no longer loses the run itself -- `audit.run_results` persists the
+  drafted letter and reply metadata, and `/result` rebuilds everything else
+  from `out/<request_id>/`. Still single-process: a run genuinely in flight
+  when the process dies is not resumed, and more than one worker would need a
+  shared store for the live status.
 - `letter.draft_and_validate()` can still return `needs_human_review: true`
   on either draft attempt -- this is by design (validator catches it, UI
   surfaces it), not a bug, but it means a run isn't guaranteed a clean letter

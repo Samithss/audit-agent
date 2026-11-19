@@ -102,7 +102,10 @@ export default function App() {
     try {
       const s = await api.getStatus(requestId)
       setRun(s)
-      if (s.status === "done") loadResult(requestId)
+      // Try the result regardless of the in-process status: after an API
+      // restart the job is "idle" in memory, but /result rebuilds it from
+      // disk + audit.run_results. Only a still-running job has nothing yet.
+      if (s.status !== "running") loadResult(requestId)
     } catch (e) {
       setLoadError(e.message)
     }

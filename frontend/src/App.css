@@ -255,6 +255,9 @@ details summary { cursor: pointer; color: var(--text-muted); font-size: 0.85rem;
 
 .inbox-row-badges { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex-shrink: 0; }
 
+.attach-opt { display: flex; align-items: center; gap: 8px; font-size: 0.88rem; color: var(--text); margin: 2px 0; cursor: pointer; }
+.attach-opt input { cursor: pointer; }
+
 .chip {
   padding: 2px 9px;
   border-radius: 10px;

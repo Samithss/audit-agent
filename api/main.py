@@ -50,7 +50,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, RedirectResponse
 import pandas as pd
 
-from agent import gmail_client, inbox_runs
+from agent import gmail_client, inbox_runs, run_results
 from agent.config import DATA_DIR, FRONTEND_URL, OUT_DIR
 from agent.decompose import decompose, decompose_from_guidelines
 from agent.letter import draft_and_validate, save_letter_docx
@@ -161,6 +161,10 @@ def _execute(request_id: str, text: str, lender_id: str, period: dict | None, sa
                 request_id=request_id, decomposed=decomposed, pack_paths=pack_paths,
                 letter=letter_result, letter_path=str(letter_path),
             )
+        try:  # survives an API restart; never let a persistence hiccup fail the run
+            run_results.save_letter(request_id, letter_result)
+        except Exception as e:
+            print(f"  warning: could not persist the letter for {request_id} ({e})")
         _append_log(request_id, "Done")
         _set(request_id, status="done")
         if request_id.startswith("GMAIL-"):
@@ -393,6 +397,7 @@ def _begin_gmail_run(message_id: str, background_tasks: BackgroundTasks, lender_
            period=_period_arg(period_from, period_to), sample_file=sample_file,
            source=f"gmail:{message_id}", recipient_name=reply_meta.get("from_name") or None)
     _set(request_id, reply_meta=reply_meta, replied=False)
+    run_results.save_reply_meta(request_id, reply_meta)
     inbox_runs.mark_processing(message_id, request_id)
     return request_id
 
@@ -428,9 +433,14 @@ def inbox_messages(background_tasks: BackgroundTasks):
     for c in candidates:
         row = tracked.get(c["message_id"], {})
         is_audit = row.get("is_audit_request")
-        if is_audit is False:
-            continue  # Prism is confident this isn't an audit request -- keep the list to real ones
-        c["status"] = row.get("status", "NEW")
+        status = row.get("status", "NEW")
+        # Hide what Prism is confident isn't an audit request -- but ONLY while
+        # it's still untouched. Once a message has been run (deliberately, by a
+        # human overriding the score, or otherwise), hiding it would strand the
+        # result: no way to reach the draft, review it, or send the reply.
+        if is_audit is False and status == "NEW":
+            continue
+        c["status"] = status
         c["is_audit_request"] = is_audit
         c["confidence"] = row.get("confidence")
         c["request_id"] = row.get("request_id")
@@ -452,23 +462,43 @@ async def start_inbox_run(message_id: str, background_tasks: BackgroundTasks,
 
 
 @app.post("/api/requests/{request_id}/send-reply")
-def send_reply(request_id: str, body: str = Form(...)):
+def send_reply(request_id: str, body: str = Form(...), attach: str | None = Form(None)):
     """Sends the (possibly human-edited) letter back to the original sender.
     Only reachable for a Gmail-sourced run -- sample/upload runs have no real
     inbox message to reply into. Nothing else in this app calls this; it only
-    runs when a human in the UI clicks Send."""
+    runs when a human in the UI clicks Send.
+
+    attach: comma-separated keys from _DOWNLOAD_FILES (gap_report /
+    request_interpretation / letter) -- the same evidence-pack files the UI
+    offers as downloads, attached to the reply. The human picks them; nothing
+    is attached by default."""
     job = _job(request_id)
-    reply_meta = job.get("reply_meta")
+    persisted = run_results.load(request_id) or {}
+    # in-memory first, then the persisted copy -- a finished run must stay
+    # replyable across an API restart, not just within one process lifetime
+    reply_meta = job.get("reply_meta") or run_results.reply_meta(request_id)
     if not reply_meta:
         raise HTTPException(400, "this request has no originating email to reply to")
-    if job.get("replied"):
+    if job.get("replied") or persisted.get("replied"):
         raise HTTPException(409, "a reply has already been sent for this request")
+
+    paths = []
+    for kind in (k.strip() for k in (attach or "").split(",") if k.strip()):
+        if kind not in _DOWNLOAD_FILES:
+            raise HTTPException(400, f"unknown attachment {kind!r}")
+        filename, _ = _DOWNLOAD_FILES[kind]
+        path = OUT_DIR / request_id / filename
+        if not path.exists():
+            raise HTTPException(409, f"{filename} has not been generated for this request")
+        paths.append(path)
 
     sent_message_id = gmail_client.send_reply(
         to=reply_meta["from"], subject=reply_meta["subject"], body_text=body,
         thread_id=reply_meta.get("thread_id"), in_reply_to=reply_meta.get("message_id_header"),
+        attachments=paths,
     )
     _set(request_id, replied=True)
+    run_results.mark_replied(request_id)
     if request_id.startswith("GMAIL-"):
         inbox_runs.mark_replied(request_id.removeprefix("GMAIL-"))
     return {"sent": True, "to": reply_meta["from"], "message_id": sent_message_id}
@@ -485,16 +515,33 @@ def run_status(request_id: str):
 @app.get("/api/requests/{request_id}/result")
 def run_result(request_id: str):
     job = _job(request_id)
-    if job["status"] != "done":
-        raise HTTPException(409, f"run is not done (status={job['status']})")
-    result = job["result"]
     od = OUT_DIR / request_id
+    persisted = run_results.load(request_id)
+
+    if job["status"] == "done":
+        decomposed = job["result"]["decomposed"]
+        letter = job["result"]["letter"]
+        reply_meta, replied = job.get("reply_meta"), job.get("replied", False)
+    elif persisted and persisted.get("letter_text") and (od / "checks.json").exists():
+        # The API restarted since this run finished -- in-memory _jobs is gone,
+        # but everything needed is on disk + in audit.run_results. Without this
+        # a Gmail message stuck at NEEDS_REVIEW could never be reviewed or
+        # replied to after a redeploy.
+        decomposed = json.loads((od / "checks.json").read_text())
+        letter = {"text": persisted["letter_text"],
+                  "needs_human_review": persisted["needs_human_review"],
+                  "validation": persisted["validation"] or {"passed": True, "reasons": []}}
+        reply_meta = run_results.reply_meta(request_id)
+        replied = persisted["replied"]
+    else:
+        raise HTTPException(409, f"run is not done (status={job['status']})")
+
     summary = pd.read_csv(od / "summary.csv").to_dict("records")
     from agent.explain import check_label
-    labels = {c["check_id"]: check_label(c) for c in result["decomposed"]["checks"]}
+    labels = {c["check_id"]: check_label(c) for c in decomposed["checks"]}
     for row in summary:
         row["check"] = labels.get(row.get("check_id"), row.get("check_type"))
-    checks_out = [dict(c, check_label=check_label(c)) for c in result["decomposed"]["checks"]]
+    checks_out = [dict(c, check_label=check_label(c)) for c in decomposed["checks"]]
 
     score = None
     gt_path = DATA_DIR / "ground_truth" / "ground_truth_account_check.csv"
@@ -509,16 +556,15 @@ def run_result(request_id: str):
         except Exception as e:
             score = {"error": str(e)}
 
-    reply_meta = job.get("reply_meta")
     return {
         "request_id": request_id,
-        "decomposed": {"checks": checks_out, "unsupported": result["decomposed"]["unsupported"]},
+        "decomposed": {"checks": checks_out, "unsupported": decomposed["unsupported"]},
         "summary": summary,
-        "letter": {"text": result["letter"]["text"], "needs_human_review": result["letter"]["needs_human_review"],
-                   "validation": result["letter"]["validation"]},
+        "letter": {"text": letter["text"], "needs_human_review": letter["needs_human_review"],
+                   "validation": letter["validation"]},
         "score": score,
         "reply_to": reply_meta["from"] if reply_meta else None,
-        "replied": job.get("replied", False),
+        "replied": replied,
     }
 
 

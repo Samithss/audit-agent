@@ -19,9 +19,13 @@ single message a human explicitly clicks "run" on.
 """
 import base64
 import email
+import mimetypes
+from email import encoders
+from email.mime.base import MIMEBase
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.utils import parseaddr
+from pathlib import Path
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -243,16 +247,39 @@ def _html_body(body_text: str) -> str:
             f'line-height:1.5;color:#222">{"".join(out)}</div>')
 
 
-def send_reply(to: str, subject: str, body_text: str, thread_id: str = None, in_reply_to: str = None) -> str:
+def send_reply(to: str, subject: str, body_text: str, thread_id: str = None, in_reply_to: str = None,
+               attachments: list | None = None) -> str:
     """Sends ONE email. Called only from api/main.py's /send-reply endpoint,
     which only runs when a human clicks Send in the UI -- there is no
     scheduler, webhook, or automatic trigger anywhere that calls this. Threads
     the reply into the original conversation when thread_id/in_reply_to are
     given (both come from get_message_meta() on the real inbound message,
-    never from client-supplied values)."""
-    msg = MIMEMultipart("alternative")
-    msg.attach(MIMEText(body_text, "plain"))
-    msg.attach(MIMEText(_html_body(body_text), "html"))
+    never from client-supplied values).
+
+    attachments: list of Path. The body is always multipart/alternative
+    (plain + HTML); with attachments that gets nested inside a
+    multipart/mixed, which is the shape mail clients expect."""
+    alt = MIMEMultipart("alternative")
+    alt.attach(MIMEText(body_text, "plain"))
+    alt.attach(MIMEText(_html_body(body_text), "html"))
+
+    if attachments:
+        msg = MIMEMultipart("mixed")
+        msg.attach(alt)
+        for path in attachments:
+            path = Path(path)
+            if not path.exists():
+                continue
+            ctype, _ = mimetypes.guess_type(path.name)
+            maintype, _, subtype = (ctype or "application/octet-stream").partition("/")
+            part = MIMEBase(maintype, subtype)
+            part.set_payload(path.read_bytes())
+            encoders.encode_base64(part)
+            part.add_header("Content-Disposition", "attachment", filename=path.name)
+            msg.attach(part)
+    else:
+        msg = alt
+
     msg["to"] = to
     msg["subject"] = subject if subject.lower().startswith("re:") else f"Re: {subject}"
     if in_reply_to:
