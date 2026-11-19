@@ -246,11 +246,11 @@ def inbox_auth_url():
 
 
 @app.get("/api/inbox/oauth/callback")
-def inbox_oauth_callback(code: str | None = None, error: str | None = None):
+def inbox_oauth_callback(code: str | None = None, state: str | None = None, error: str | None = None):
     if error:
         return RedirectResponse(f"{FRONTEND_URL}/?inbox_error={error}")
     try:
-        gmail_client.exchange_code(code)
+        gmail_client.exchange_code(code, state)
     except Exception as e:
         return RedirectResponse(f"{FRONTEND_URL}/?inbox_error={e}")
     return RedirectResponse(f"{FRONTEND_URL}/?inbox=connected")

@@ -48,17 +48,32 @@ def is_configured() -> bool:
     return bool(GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET)
 
 
+# google-auth-oauthlib 1.x auto-generates a PKCE code_verifier on
+# authorization_url() (autogenerate_code_verifier=True by default) and embeds
+# its code_challenge in the URL Google redirects the user to. The callback
+# comes back as a SEPARATE HTTP request/Flow instance, so that code_verifier
+# has to be carried across the redirect ourselves or Google's token endpoint
+# rejects the exchange with "invalid_grant: Missing code verifier" -- keyed
+# by the OAuth `state` param, which Google echoes back verbatim. In-memory is
+# fine here: single process, single operator, and an entry only needs to
+# survive the few seconds of the redirect round-trip.
+_pending_pkce = {}
+
+
 def build_auth_url() -> str:
     flow = Flow.from_client_config(_client_config(), scopes=SCOPES, redirect_uri=GOOGLE_REDIRECT_URI)
-    url, _state = flow.authorization_url(access_type="offline", prompt="consent", include_granted_scopes="true")
+    url, state = flow.authorization_url(access_type="offline", prompt="consent", include_granted_scopes="true")
+    _pending_pkce[state] = flow.code_verifier
     return url
 
 
-def exchange_code(code: str) -> None:
-    """Called from the OAuth callback with Google's one-time code. Stores the
-    refresh token -- this is the ONLY place a token is written from a fresh
-    grant; every later use just refreshes it in place."""
+def exchange_code(code: str, state: str = None) -> None:
+    """Called from the OAuth callback with Google's one-time code (+ the
+    state it was issued under). Stores the refresh token -- this is the ONLY
+    place a token is written from a fresh grant; every later use just
+    refreshes it in place."""
     flow = Flow.from_client_config(_client_config(), scopes=SCOPES, redirect_uri=GOOGLE_REDIRECT_URI)
+    flow.code_verifier = _pending_pkce.pop(state, None)
     flow.fetch_token(code=code)
     creds = flow.credentials
     with db.connect() as conn, conn.cursor() as cur:
