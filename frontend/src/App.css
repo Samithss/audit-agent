@@ -218,6 +218,9 @@ details summary { cursor: pointer; color: var(--text-muted); font-size: 0.85rem;
   overflow: auto;
 }
 
+.letter-text p { margin: 0 0 12px; white-space: pre-wrap; }
+.letter-table { margin: 0 0 12px; white-space: pre; overflow-x: auto; font-size: 0.8rem; }
+
 .metrics { display: flex; gap: 20px; margin-bottom: 16px; flex-wrap: wrap; }
 .metric {
   background: var(--surface-2);

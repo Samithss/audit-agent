@@ -8,7 +8,7 @@ export default function ChecksPane({ decomposed }) {
           <h3>Checks ({checks.length})</h3>
           {checks.map((c) => (
             <div className="check-card" key={c.check_id}>
-              <strong>{c.check_id} -- {c.check_type}</strong>
+              <strong>{c.check_id} -- {c.check_label || c.check_type}</strong>
               <p className="quote">&ldquo;{c.source_text}&rdquo;</p>
             </div>
           ))}

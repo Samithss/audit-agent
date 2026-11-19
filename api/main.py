@@ -31,6 +31,7 @@ Shared, once a job is started under some request_id:
   GET /api/requests/{id}/result              -- full bundle once status == "done" (includes
                                                  reply_to / replied for Gmail-sourced runs)
   GET /api/requests/{id}/gaps                -- gap_items.csv, optionally filtered
+  GET /api/requests/{id}/verdicts            -- one row per account x check, ?status= EVIDENCED|GAP|CANNOT_DETERMINE|NOT_APPLICABLE
   GET /api/requests/{id}/download/{kind}     -- gap_report.xlsx / request_interpretation.md / letter docx
 
 A run is keyed by request_id, not a fresh job id -- out/<REQ>/ is already the
@@ -51,7 +52,7 @@ import pandas as pd
 
 from agent import gmail_client
 from agent.config import DATA_DIR, FRONTEND_URL, OUT_DIR
-from agent.decompose import decompose
+from agent.decompose import decompose, decompose_from_guidelines
 from agent.letter import draft_and_validate, save_letter_docx
 from agent.pack import build_pack
 from agent.run_checks import run
@@ -118,18 +119,31 @@ def _append_log(request_id: str, msg: str):
         _jobs[request_id]["log"].append(msg)
 
 
-def _execute(request_id: str, text: str, lender_id: str, period: dict, sample_file: str, source: str):
+def _execute(request_id: str, text: str, lender_id: str, period: dict | None, sample_file: str, source: str,
+             guideline_ids: list | None = None):
     """The one pipeline every entry point (sample picker / upload / Gmail)
     ultimately calls, just with a different source for `text`."""
     try:
         _append_log(request_id, "Decomposing the request...")
-        decomposed = decompose(request_text=text, request_id=request_id, lender_id=lender_id,
-                                period=period, sample_file=sample_file, source=source)
+        if text and text.strip():
+            decomposed = decompose(request_text=text, request_id=request_id, lender_id=lender_id,
+                                    period=period, sample_file=sample_file, source=source)
+            if guideline_ids:
+                _append_log(request_id, f"Adding {len(guideline_ids)} selected guideline(s) to the "
+                                         f"{len(decomposed['checks'])} check(s) found in the request")
+                decomposed = decompose_from_guidelines(guideline_ids, request_id, lender_id, period, sample_file,
+                                                       source, base=decomposed)
+        else:
+            _append_log(request_id, "No request text -- using the selected guidelines")
+            decomposed = decompose_from_guidelines(guideline_ids or [], request_id, lender_id, period, sample_file, source)
         decomposed_path = OUT_DIR / request_id / "checks.json"
         decomposed_path.parent.mkdir(parents=True, exist_ok=True)
         decomposed_path.write_text(json.dumps(decomposed, indent=2))
         _append_log(request_id, f"Extracted {len(decomposed['checks'])} checks, "
                                  f"{len(decomposed['unsupported'])} unsupported")
+        pr = decomposed["period"]
+        _append_log(request_id, f"Audit period: {pr['from']} to {pr['to']} "
+                                 f"({'from the request' if decomposed['period_source'] == 'extracted' else 'as entered'})")
 
         _append_log(request_id, "Running checks against the sample...")
         vdf = run(decomposed_path, tools=Tools(), verbose=False)
@@ -154,7 +168,8 @@ def _execute(request_id: str, text: str, lender_id: str, period: dict, sample_fi
         _append_log(request_id, f"Error: {e}")
 
 
-def _resolve_sample(request_id: str, lender_id: str | None, annexure_bytes: bytes | None, annexure_name: str | None):
+def _resolve_sample(request_id: str, lender_id: str | None, annexure_bytes: bytes | None, annexure_name: str | None,
+                    request_text: str | None = None):
     """Decide which accounts to test. Returns (lender_id, sample_file).
 
     - Annexure A attached (csv/xlsx with an account_id column): use exactly
@@ -163,17 +178,23 @@ def _resolve_sample(request_id: str, lender_id: str | None, annexure_bytes: byte
       policy overrides in D12 depend on it).
     - Nothing attached: fall back to the chosen lender's built-in sample.
     """
-    if not annexure_bytes:
-        if not lender_id:
-            raise HTTPException(400, "pick a lender, or attach an account list (Annexure A)")
-        if lender_id not in LENDER_SAMPLES:
-            raise HTTPException(400, f"unknown lender_id -- must be one of {list(LENDER_SAMPLES)}")
-        return lender_id, LENDER_SAMPLES[lender_id]
-
     import io
+    import re
     name = (annexure_name or "").lower()
+    ids_from_text: list[str] = []
+    if not annexure_bytes:
+        # No account list: use any account ids the request itself names.
+        ids_from_text = list(dict.fromkeys(re.findall(r"\bACC\d+\b", request_text or "", flags=re.I)))
+        ids_from_text = [a.upper() for a in ids_from_text]
+        if not ids_from_text:
+            if lender_id in LENDER_SAMPLES:
+                return lender_id, LENDER_SAMPLES[lender_id]
+            raise HTTPException(400, "no accounts to test -- attach an account list, or name the account ids "
+                                     "(e.g. ACC100001) in the request")
     try:
-        if name.endswith(".csv"):
+        if ids_from_text:
+            df = pd.DataFrame({"account_id": ids_from_text})
+        elif name.endswith(".csv"):
             df = pd.read_csv(io.BytesIO(annexure_bytes), dtype=str)
         elif name.endswith((".xlsx", ".xls")):
             df = pd.read_excel(io.BytesIO(annexure_bytes), dtype=str)
@@ -218,6 +239,23 @@ def _resolve_sample(request_id: str, lender_id: str | None, annexure_bytes: byte
     return lender_id, str(path)  # absolute: DATA_DIR / abs == abs
 
 
+def _period_arg(period_from: str | None, period_to: str | None) -> dict | None:
+    """Both dates, or neither (then decompose() reads the period from the request)."""
+    from datetime import date
+    period_from, period_to = (period_from or "").strip(), (period_to or "").strip()
+    if not period_from and not period_to:
+        return None
+    if not (period_from and period_to):
+        raise HTTPException(400, "enter both 'Period from' and 'Period to', or leave both blank")
+    try:
+        f, t = date.fromisoformat(period_from), date.fromisoformat(period_to)
+    except ValueError:
+        raise HTTPException(400, "period dates must be YYYY-MM-DD")
+    if f > t:
+        raise HTTPException(400, "'Period from' is after 'Period to'")
+    return {"from": period_from, "to": period_to}
+
+
 def _start(request_id: str, background_tasks: BackgroundTasks, **kw):
     job = _job(request_id)
     if job["status"] == "running":
@@ -255,6 +293,12 @@ def start_sample_run(request_id: str, background_tasks: BackgroundTasks):
 
 # ---------------------------------------------------------------- 2. upload your own
 
+@app.get("/api/guidelines")
+def list_guidelines():
+    from agent.guidelines import list_guidelines as _lg
+    return _lg()
+
+
 @app.get("/api/lenders")
 def list_lenders():
     return [{"lender_id": lid, "sample_file": sf} for lid, sf in LENDER_SAMPLES.items()]
@@ -263,34 +307,41 @@ def list_lenders():
 @app.post("/api/custom/run", status_code=202)
 async def start_custom_run(
     background_tasks: BackgroundTasks,
-    period_from: str = Form(...),
-    period_to: str = Form(...),
+    period_from: str | None = Form(None),
+    period_to: str | None = Form(None),
     lender_id: str | None = Form(None),
     text: str | None = Form(None),
+    guideline_ids: str | None = Form(None),   # comma-separated; used when the request names no checks
     file: UploadFile | None = File(None),
     accounts_file: UploadFile | None = File(None),
 ):
-    if not file and not (text and text.strip()):
-        raise HTTPException(400, "provide either a PDF file or pasted text")
+    gids = [g.strip() for g in (guideline_ids or "").split(",") if g.strip()]
+    if not file and not (text and text.strip()) and not gids:
+        raise HTTPException(400, "provide a request file, pasted text, or select guidelines to check")
+    if gids:
+        from agent.guidelines import checks_for
+        try:
+            checks_for(gids)
+        except ValueError as e:
+            raise HTTPException(400, str(e))
 
     if file:
-        if not file.filename.lower().endswith(".pdf"):
-            raise HTTPException(400, "only .pdf uploads are supported (use the text box for plain text)")
-        import io
-        import pdfplumber
-        body = await file.read()
-        with pdfplumber.open(io.BytesIO(body)) as pdf:
-            request_text_ = "\n".join(p.extract_text() or "" for p in pdf.pages)
+        from agent.file_text import extract_text
+        try:
+            request_text_ = extract_text(file.filename, await file.read())
+        except ValueError as e:
+            raise HTTPException(400, str(e))
         source = f"upload:{file.filename}"
     else:
-        request_text_ = text
-        source = "upload:pasted-text"
+        request_text_ = text or ""
+        source = "upload:pasted-text" if request_text_.strip() else "upload:selected-guidelines"
 
     request_id = f"CUSTOM-{uuid.uuid4().hex[:8]}"
     ann = await accounts_file.read() if accounts_file else None
-    lender_id, sample_file = _resolve_sample(request_id, lender_id or None, ann, accounts_file.filename if accounts_file else None)
+    lender_id, sample_file = _resolve_sample(request_id, lender_id or None, ann, accounts_file.filename if accounts_file else None, request_text_)
     _start(request_id, background_tasks, text=request_text_, lender_id=lender_id,
-           period={"from": period_from, "to": period_to}, sample_file=sample_file, source=source)
+           period=_period_arg(period_from, period_to), sample_file=sample_file, source=source,
+           guideline_ids=gids)
     return {"request_id": request_id, "status": "running"}
 
 
@@ -330,7 +381,7 @@ def inbox_messages():
 
 @app.post("/api/inbox/messages/{message_id}/run", status_code=202)
 async def start_inbox_run(message_id: str, background_tasks: BackgroundTasks,
-                           period_from: str = Form(...), period_to: str = Form(...),
+                           period_from: str | None = Form(None), period_to: str | None = Form(None),
                            lender_id: str | None = Form(None), accounts_file: UploadFile | None = File(None)):
     request_id = f"GMAIL-{message_id}"
     ann = await accounts_file.read() if accounts_file else None
@@ -340,7 +391,7 @@ async def start_inbox_run(message_id: str, background_tasks: BackgroundTasks,
     # /send-reply will actually send to later, once a human approves it.
     reply_meta = gmail_client.get_message_meta(message_id)
     _start(request_id, background_tasks, text=text, lender_id=lender_id,
-           period={"from": period_from, "to": period_to}, sample_file=sample_file,
+           period=_period_arg(period_from, period_to), sample_file=sample_file,
            source=f"gmail:{message_id}")
     _set(request_id, reply_meta=reply_meta, replied=False)
     return {"request_id": request_id, "status": "running"}
@@ -383,6 +434,11 @@ def run_result(request_id: str):
     result = job["result"]
     od = OUT_DIR / request_id
     summary = pd.read_csv(od / "summary.csv").to_dict("records")
+    from agent.explain import check_label
+    labels = {c["check_id"]: check_label(c) for c in result["decomposed"]["checks"]}
+    for row in summary:
+        row["check"] = labels.get(row.get("check_id"), row.get("check_type"))
+    checks_out = [dict(c, check_label=check_label(c)) for c in result["decomposed"]["checks"]]
 
     score = None
     gt_path = DATA_DIR / "ground_truth" / "ground_truth_account_check.csv"
@@ -400,7 +456,7 @@ def run_result(request_id: str):
     reply_meta = job.get("reply_meta")
     return {
         "request_id": request_id,
-        "decomposed": {"checks": result["decomposed"]["checks"], "unsupported": result["decomposed"]["unsupported"]},
+        "decomposed": {"checks": checks_out, "unsupported": result["decomposed"]["unsupported"]},
         "summary": summary,
         "letter": {"text": result["letter"]["text"], "needs_human_review": result["letter"]["needs_human_review"],
                    "validation": result["letter"]["validation"]},
@@ -422,6 +478,31 @@ def gaps(request_id: str, check_type: str | None = None, severity: str | None = 
     if severity:
         df = df[df.severity == severity]
     return df.to_dict("records")
+
+
+@app.get("/api/requests/{request_id}/verdicts")
+def verdicts(request_id: str, status: str | None = None, check_type: str | None = None):
+    """One row per account x check (verdicts.csv). status: EVIDENCED | GAP | CANNOT_DETERMINE | NOT_APPLICABLE."""
+    path = OUT_DIR / request_id / "verdicts.csv"
+    if not path.exists():
+        raise HTTPException(409, "no run output yet for this request")
+    if status and status not in ("EVIDENCED", "GAP", "CANNOT_DETERMINE", "NOT_APPLICABLE"):
+        raise HTTPException(400, "status must be EVIDENCED, GAP, CANNOT_DETERMINE or NOT_APPLICABLE")
+    df = pd.read_csv(path, dtype=str).fillna("")
+    if status:
+        df = df[df.status == status]
+    if check_type:
+        df = df[df.check_type == check_type]
+    return df.to_dict("records")
+
+
+@app.get("/api/requests/{request_id}/account-results")
+def account_results(request_id: str):
+    """One row per account x check with channel, plain-English reason and the underlying records."""
+    if not (OUT_DIR / request_id / "verdicts.csv").exists():
+        raise HTTPException(409, "no run output yet for this request")
+    from agent.explain import account_results as _ar
+    return _ar(request_id)
 
 
 _DOWNLOAD_FILES = {

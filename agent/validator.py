@@ -18,8 +18,16 @@ def validate(text: str, summary: dict) -> dict:
     reasons = []
     lower = text.lower()
 
+    # Severity names (e.g. MINOR) are the request's own scale labels, not softening.
+    # Only the exact upper-case label is exempt; a lower-case "minor" is still flagged.
+    labels = set(summary.get("severity_order", [])) | {r["severity"] for r in summary.get("severity_by_check", [])}
+    scrubbed = text
+    for lab in labels:
+        scrubbed = scrubbed.replace(lab, "")
+    scrubbed = scrubbed.lower()
+
     for w in SOFTENING_WORDS:
-        if w in lower:
+        if w in scrubbed:
             reasons.append(f"softening language: {w!r}")
 
     if PHONE_RE.search(text):

@@ -13,6 +13,7 @@ export const api = {
   getText: (id) => fetch(`${BASE}/requests/${id}/text`).then(json),
   startRun: (id) => fetch(`${BASE}/requests/${id}/run`, { method: "POST" }).then(json),
 
+  listGuidelines: () => fetch(`${BASE}/guidelines`).then(json),
   listLenders: () => fetch(`${BASE}/lenders`).then(json),
   startCustomRun: (formData) => fetch(`${BASE}/custom/run`, { method: "POST", body: formData }).then(json),
 
@@ -31,6 +32,9 @@ export const api = {
     const qs = params.toString()
     return fetch(`${BASE}/requests/${id}/gaps${qs ? `?${qs}` : ""}`).then(json)
   },
+  getAccountResults: (id) => fetch(`${BASE}/requests/${id}/account-results`).then(json),
+  getVerdicts: (id, status) =>
+    fetch(`${BASE}/requests/${id}/verdicts?status=${encodeURIComponent(status)}`).then(json),
   downloadUrl: (id, kind) => `${BASE}/requests/${id}/download/${kind}`,
 
   sendReply: (id, body) => {

@@ -18,9 +18,20 @@ compliance team to a lender who sent an audit request, based ONLY on the JSON
 summary you are given -- never invent a fact not present in it.
 
 Rules:
-- State plainly how many accounts were checked and how many checks were run.
-- For every check with gaps, state the gap count and severity. Cite nothing you
-  cannot see in the summary.
+- State plainly the audit period, how many accounts were checked, how many checks
+  were run, and how many accounts had at least one gap.
+- Do NOT list per-check counts or severities in prose. The system inserts a results
+  table (counts per check and status, plus severity) at the place where you write the
+  line [[RESULTS_TABLE]] on its own, between blank lines. Introduce it with one short
+  sentence just before. Cite nothing you cannot see in the summary.
+- Layout: opening paragraph; one lead-in sentence; the [[RESULTS_TABLE]] line; then
+  the paragraph about unsupported requirements (if any); then the closing sentence.
+- Name the checks that had gaps in plain words, using each "check_label" from
+  severity_by_check (for example "Consent - WhatsApp"), with the number of accounts
+  and the severity, so the reader knows exactly which requirement or guideline failed.
+  Never write the bare words "check type" or the raw code name; use the check_label.
+- Severity names (CRITICAL, MAJOR, MINOR, ...) are labels from the request's own
+  scale and may be written as they are.
 - Never use softening language: no "minor", "isolated", "broadly compliant",
   "largely", "substantially compliant", "negligible", "only a few", "relatively",
   "mostly compliant". State counts plainly, even when the finding is unflattering.
@@ -43,16 +54,22 @@ def _summary_for_letter(request_id: str, decomposed_path, out_dir=OUT_DIR) -> di
     od = Path(out_dir) / request_id
     verdicts = pd.read_csv(od / "verdicts.csv", dtype=str)
 
+    from .explain import check_label
+    labels = {c["check_id"]: check_label(c) for c in spec["checks"]}
     by_check = (
         verdicts.groupby(["check_id", "check_type"])["status"]
         .value_counts().unstack(fill_value=0).reset_index().to_dict("records")
     )
+    for r in by_check:
+        r["check_label"] = labels.get(r["check_id"], r["check_type"])
     gap_accounts = verdicts[verdicts.status == "GAP"]
     severity_by_check = (
         gap_accounts.groupby(["check_id", "check_type", "severity"]).size()
         .reset_index(name="accounts_with_gap").to_dict("records")
         if len(gap_accounts) else []
     )
+    for r in severity_by_check:
+        r["check_label"] = labels.get(r["check_id"], r["check_type"])
 
     return {
         "lender_id": spec["lender_id"],
@@ -62,8 +79,39 @@ def _summary_for_letter(request_id: str, decomposed_path, out_dir=OUT_DIR) -> di
         "by_check": by_check,
         "total_accounts_with_gap": int(len(gap_accounts)),
         "severity_by_check": severity_by_check,
+        "severity_order": spec.get("severity_order", []),
         "unsupported": [c["source_text"] for c in spec.get("unsupported", [])],
     }
+
+
+STATUSES = [("EVIDENCED", "Evidenced"), ("GAP", "Gap"),
+            ("CANNOT_DETERMINE", "Cannot determine"), ("NOT_APPLICABLE", "Not applicable")]
+
+
+def _results_table(summary: dict) -> str:
+    """Plain-text pipe table, built in code (never by the model), so the counts
+    are exactly the summary's. One row per check."""
+    sev_by_check = {}
+    for r in summary.get("severity_by_check", []):
+        sev_by_check.setdefault(r["check_id"], set()).add(r["severity"])
+    order = summary.get("severity_order", [])
+    rank = lambda x: order.index(x) if x in order else len(order)
+    header = ["Check", "What was checked"] + [lbl for _, lbl in STATUSES] + ["Severity of gaps"]
+    rows = []
+    for r in summary["by_check"]:
+        sev = "/".join(sorted(sev_by_check.get(r["check_id"], []), key=rank)) or "-"
+        rows.append([r["check_id"], r.get("check_label", r["check_type"])] + [str(r.get(k, 0)) for k, _ in STATUSES] + [sev])
+    w = [max(len(x[i]) for x in [header] + rows) for i in range(len(header))]
+    line = lambda cells: "| " + " | ".join(c.ljust(w[i]) for i, c in enumerate(cells)) + " |"
+    return "\n".join([line(header), "|" + "|".join("-" * (x + 2) for x in w) + "|"] + [line(r) for r in rows])
+
+
+def _insert_table(text: str, summary: dict) -> str:
+    table = _results_table(summary)
+    if "[[RESULTS_TABLE]]" in text:
+        return text.replace("[[RESULTS_TABLE]]", table)
+    head, sep, tail = text.rpartition("\n\n")  # model forgot the marker: put it before the closing sentence
+    return f"{head}\n\n{table}\n\n{tail}" if sep else f"{text}\n\n{table}"
 
 
 def _ask_model(summary: dict, retry_reasons=None) -> str:
@@ -94,7 +142,7 @@ def draft_and_validate(request_id: str, decomposed_path, out_dir=OUT_DIR) -> dic
         result = validate(text, summary)
 
     return {
-        "text": text,
+        "text": _insert_table(text, summary),
         "summary": summary,
         "validation": result,
         "needs_human_review": not result["passed"],
@@ -105,7 +153,21 @@ def save_letter_docx(request_id: str, text: str, out_dir=OUT_DIR) -> Path:
     doc = Document()
     doc.add_heading(f"Response to audit request -- {request_id}", level=1)
     for para in text.split("\n\n"):
-        if para.strip():
+        if not para.strip():
+            continue
+        lines = [l for l in para.strip().split("\n")]
+        if all(l.startswith("|") for l in lines):  # the results table -> a real Word table
+            cells = [[c.strip() for c in l.strip().strip("|").split("|")]
+                     for l in lines if not set(l) <= set("|- ")]
+            t = doc.add_table(rows=len(cells), cols=len(cells[0]))
+            t.style = "Table Grid"
+            for i, row in enumerate(cells):
+                for j, c in enumerate(row):
+                    t.cell(i, j).text = c
+                    if i == 0:
+                        for r in t.cell(i, j).paragraphs[0].runs:
+                            r.bold = True
+        else:
             doc.add_paragraph(para.strip())
     od = Path(out_dir) / request_id
     od.mkdir(parents=True, exist_ok=True)
