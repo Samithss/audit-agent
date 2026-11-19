@@ -1,17 +1,20 @@
 import { useEffect, useState } from "react"
 import { api } from "../api"
 import LenderPeriodFields from "./LenderPeriodFields"
+import AccountsField from "./AccountsField"
 
 function MessageRow({ msg, lenders, running, onStarted, onError }) {
+  const [accountsFile, setAccountsFile] = useState(null)
   const [lenderId, setLenderId] = useState("")
   const [periodFrom, setPeriodFrom] = useState("")
   const [periodTo, setPeriodTo] = useState("")
   const [open, setOpen] = useState(false)
-  const canRun = lenderId && periodFrom && periodTo
+  const canRun = (lenderId || accountsFile) && periodFrom && periodTo
 
   async function submit() {
     const fd = new FormData()
-    fd.set("lender_id", lenderId)
+    if (lenderId) fd.set("lender_id", lenderId)
+    if (accountsFile) fd.set("accounts_file", accountsFile)
     fd.set("period_from", periodFrom)
     fd.set("period_to", periodTo)
     try {
@@ -34,7 +37,8 @@ function MessageRow({ msg, lenders, running, onStarted, onError }) {
       </div>
       {open && (
         <div className="inbox-row-run">
-          <LenderPeriodFields lenders={lenders} lenderId={lenderId} setLenderId={setLenderId}
+          <AccountsField file={accountsFile} setFile={setAccountsFile} disabled={running} />
+          <LenderPeriodFields hasAccounts={!!accountsFile} lenders={lenders} lenderId={lenderId} setLenderId={setLenderId}
             periodFrom={periodFrom} setPeriodFrom={setPeriodFrom} periodTo={periodTo} setPeriodTo={setPeriodTo} />
           <button className="primary" onClick={submit} disabled={!canRun || running}>
             {running ? "Running..." : "Run agent on this email"}

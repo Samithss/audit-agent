@@ -1,20 +1,23 @@
 import { useState } from "react"
 import { api } from "../api"
 import LenderPeriodFields from "./LenderPeriodFields"
+import AccountsField from "./AccountsField"
 
 export default function UploadPane({ lenders, running, onStarted, onError }) {
   const [inputMode, setInputMode] = useState("pdf") // "pdf" | "text"
   const [file, setFile] = useState(null)
   const [text, setText] = useState("")
+  const [accountsFile, setAccountsFile] = useState(null)
   const [lenderId, setLenderId] = useState("")
   const [periodFrom, setPeriodFrom] = useState("")
   const [periodTo, setPeriodTo] = useState("")
 
-  const canRun = lenderId && periodFrom && periodTo && (inputMode === "pdf" ? file : text.trim())
+  const canRun = (lenderId || accountsFile) && periodFrom && periodTo && (inputMode === "pdf" ? file : text.trim())
 
   async function submit() {
     const fd = new FormData()
-    fd.set("lender_id", lenderId)
+    if (lenderId) fd.set("lender_id", lenderId)
+    if (accountsFile) fd.set("accounts_file", accountsFile)
     fd.set("period_from", periodFrom)
     fd.set("period_to", periodTo)
     if (inputMode === "pdf") fd.set("file", file)
@@ -53,10 +56,11 @@ export default function UploadPane({ lenders, running, onStarted, onError }) {
       )}
 
       <p className="muted" style={{ marginTop: 10 }}>
-        The uploaded letter's content decides which checks to run; "Test against" picks which lender's sampled
-        accounts to run them on (the dataset only has real account data for these 3 lenders).
+        The uploaded letter's content decides which checks to run. Accounts come from the list you attach below,
+        or, if none, from the sampled accounts of the lender you pick.
       </p>
-      <LenderPeriodFields lenders={lenders} lenderId={lenderId} setLenderId={setLenderId}
+      <AccountsField file={accountsFile} setFile={setAccountsFile} disabled={running} />
+      <LenderPeriodFields hasAccounts={!!accountsFile} lenders={lenders} lenderId={lenderId} setLenderId={setLenderId}
         periodFrom={periodFrom} setPeriodFrom={setPeriodFrom} periodTo={periodTo} setPeriodTo={setPeriodTo} />
 
       <button className="primary" onClick={submit} disabled={!canRun || running}>

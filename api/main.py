@@ -154,6 +154,70 @@ def _execute(request_id: str, text: str, lender_id: str, period: dict, sample_fi
         _append_log(request_id, f"Error: {e}")
 
 
+def _resolve_sample(request_id: str, lender_id: str | None, annexure_bytes: bytes | None, annexure_name: str | None):
+    """Decide which accounts to test. Returns (lender_id, sample_file).
+
+    - Annexure A attached (csv/xlsx with an account_id column): use exactly
+      those accounts. Every id is checked against audit.accounts; the lender
+      is inferred from them if not given, and must match if given (lender
+      policy overrides in D12 depend on it).
+    - Nothing attached: fall back to the chosen lender's built-in sample.
+    """
+    if not annexure_bytes:
+        if not lender_id:
+            raise HTTPException(400, "pick a lender, or attach an account list (Annexure A)")
+        if lender_id not in LENDER_SAMPLES:
+            raise HTTPException(400, f"unknown lender_id -- must be one of {list(LENDER_SAMPLES)}")
+        return lender_id, LENDER_SAMPLES[lender_id]
+
+    import io
+    name = (annexure_name or "").lower()
+    try:
+        if name.endswith(".csv"):
+            df = pd.read_csv(io.BytesIO(annexure_bytes), dtype=str)
+        elif name.endswith((".xlsx", ".xls")):
+            df = pd.read_excel(io.BytesIO(annexure_bytes), dtype=str)
+        else:
+            raise HTTPException(400, "account list must be a .csv or .xlsx file")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(400, f"could not read the account list: {e}")
+    cols = {str(c).strip().lower(): c for c in df.columns}
+    col = cols.get("account_id") or cols.get("account id") or cols.get("accountid")
+    if col is None:
+        if len(df.columns) == 1:
+            col = df.columns[0]
+        else:
+            raise HTTPException(400, f"account list needs an 'account_id' column (found: {list(df.columns)})")
+    ids = list(dict.fromkeys(a.strip() for a in df[col].dropna().astype(str) if a.strip()))
+    if not ids:
+        raise HTTPException(400, "the account list has no account ids")
+
+    from agent.db import connect
+    with connect() as conn:
+        rows = conn.execute("SELECT account_id, lender_id FROM audit.accounts WHERE account_id = ANY(%s)", (ids,)).fetchall()
+    found = {r["account_id"]: r["lender_id"] for r in rows}
+    missing = [a for a in ids if a not in found]
+    if missing:
+        raise HTTPException(400, f"{len(missing)} of {len(ids)} account ids are not in the dataset, e.g. {missing[:5]}")
+    lenders = sorted(set(found.values()))
+    if lender_id:
+        bad = [a for a, l in found.items() if l != lender_id]
+        if bad:
+            raise HTTPException(400, f"{len(bad)} accounts do not belong to lender {lender_id}, e.g. {bad[:5]}")
+    elif len(lenders) == 1:
+        lender_id = lenders[0]
+    else:
+        raise HTTPException(400, f"the accounts span several lenders {lenders} -- pick one lender or split the list")
+
+    out = OUT_DIR / request_id
+    out.mkdir(parents=True, exist_ok=True)
+    path = out / "annexure_a.csv"
+    pd.DataFrame({"sr_no": range(1, len(ids) + 1), "account_id": ids}).to_csv(path, index=False)
+    return lender_id, str(path)  # absolute: DATA_DIR / abs == abs
+
+
 def _start(request_id: str, background_tasks: BackgroundTasks, **kw):
     job = _job(request_id)
     if job["status"] == "running":
@@ -199,14 +263,13 @@ def list_lenders():
 @app.post("/api/custom/run", status_code=202)
 async def start_custom_run(
     background_tasks: BackgroundTasks,
-    lender_id: str = Form(...),
     period_from: str = Form(...),
     period_to: str = Form(...),
+    lender_id: str | None = Form(None),
     text: str | None = Form(None),
     file: UploadFile | None = File(None),
+    accounts_file: UploadFile | None = File(None),
 ):
-    if lender_id not in LENDER_SAMPLES:
-        raise HTTPException(400, f"unknown lender_id -- must be one of {list(LENDER_SAMPLES)}")
     if not file and not (text and text.strip()):
         raise HTTPException(400, "provide either a PDF file or pasted text")
 
@@ -224,8 +287,10 @@ async def start_custom_run(
         source = "upload:pasted-text"
 
     request_id = f"CUSTOM-{uuid.uuid4().hex[:8]}"
+    ann = await accounts_file.read() if accounts_file else None
+    lender_id, sample_file = _resolve_sample(request_id, lender_id or None, ann, accounts_file.filename if accounts_file else None)
     _start(request_id, background_tasks, text=request_text_, lender_id=lender_id,
-           period={"from": period_from, "to": period_to}, sample_file=LENDER_SAMPLES[lender_id], source=source)
+           period={"from": period_from, "to": period_to}, sample_file=sample_file, source=source)
     return {"request_id": request_id, "status": "running"}
 
 
@@ -264,17 +329,18 @@ def inbox_messages():
 
 
 @app.post("/api/inbox/messages/{message_id}/run", status_code=202)
-def start_inbox_run(message_id: str, background_tasks: BackgroundTasks,
-                     lender_id: str = Form(...), period_from: str = Form(...), period_to: str = Form(...)):
-    if lender_id not in LENDER_SAMPLES:
-        raise HTTPException(400, f"unknown lender_id -- must be one of {list(LENDER_SAMPLES)}")
-    text = gmail_client.get_message_text(message_id)
+async def start_inbox_run(message_id: str, background_tasks: BackgroundTasks,
+                           period_from: str = Form(...), period_to: str = Form(...),
+                           lender_id: str | None = Form(None), accounts_file: UploadFile | None = File(None)):
     request_id = f"GMAIL-{message_id}"
+    ann = await accounts_file.read() if accounts_file else None
+    lender_id, sample_file = _resolve_sample(request_id, lender_id or None, ann, accounts_file.filename if accounts_file else None)
+    text = gmail_client.get_message_text(message_id)
     # fetched fresh from Gmail, not trusted from the client -- this is who
     # /send-reply will actually send to later, once a human approves it.
     reply_meta = gmail_client.get_message_meta(message_id)
     _start(request_id, background_tasks, text=text, lender_id=lender_id,
-           period={"from": period_from, "to": period_to}, sample_file=LENDER_SAMPLES[lender_id],
+           period={"from": period_from, "to": period_to}, sample_file=sample_file,
            source=f"gmail:{message_id}")
     _set(request_id, reply_meta=reply_meta, replied=False)
     return {"request_id": request_id, "status": "running"}

@@ -1,10 +1,10 @@
-export default function LenderPeriodFields({ lenders, lenderId, setLenderId, periodFrom, setPeriodFrom, periodTo, setPeriodTo }) {
+export default function LenderPeriodFields({ hasAccounts = false, lenders, lenderId, setLenderId, periodFrom, setPeriodFrom, periodTo, setPeriodTo }) {
   return (
     <div className="row">
       <label className="field">
-        <span>Test against</span>
+        <span>{hasAccounts ? "Lender (auto-detected if blank)" : "Test against"}</span>
         <select value={lenderId} onChange={(e) => setLenderId(e.target.value)}>
-          <option value="">Pick a lender's sample...</option>
+          <option value="">{hasAccounts ? "Auto-detect from accounts" : "Pick a lender's sample..."}</option>
           {lenders.map((l) => (
             <option key={l.lender_id} value={l.lender_id}>{l.lender_id}</option>
           ))}
